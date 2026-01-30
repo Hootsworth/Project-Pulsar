@@ -1,0 +1,1528 @@
+/**
+ * Intent Mode - Stoic Reader View
+ * Minimal, focused reading experience
+ */
+
+/* ==================== Base Reset ==================== */
+.intent-mode-active {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: var(--intent-bg, #0a0a0b) !important;
+    min-height: 100vh;
+    overflow-x: hidden;
+
+    /* Stoic MacOS Palette - Default (Dark) */
+    --intent-bg: #0f0f10;
+    --intent-surface: rgba(255, 255, 255, 0.03);
+    --intent-border: rgba(255, 255, 255, 0.08);
+    --intent-text: #ffffff;
+    --intent-text-muted: rgba(255, 255, 255, 0.5);
+    --intent-accent: rgba(255, 255, 255, 0.7);
+    --intent-accent-soft: rgba(255, 255, 255, 0.08);
+    --intent-code-bg: rgba(255, 255, 255, 0.04);
+    --intent-progress: rgba(255, 255, 255, 0.4);
+    --intent-shadow: 0 40px 120px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    --intent-glass-bg: rgba(10, 10, 12, 0.98);
+
+    color: var(--intent-text) !important;
+}
+
+.intent-mode-active::-webkit-scrollbar {
+    width: 12px;
+}
+
+.intent-mode-active::-webkit-scrollbar-track {
+    background: var(--intent-bg);
+}
+
+.intent-mode-active::-webkit-scrollbar-thumb {
+    background-color: var(--intent-border);
+    border-radius: 20px;
+    border: 3px solid var(--intent-bg);
+}
+
+.intent-mode-active::-webkit-scrollbar-thumb:hover {
+    background-color: var(--intent-accent-soft);
+}
+
+.intent-mode-container {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--intent-text);
+    background: var(--intent-bg);
+    min-height: 100vh;
+    line-height: 1.75;
+    font-size: 18px;
+    -webkit-font-smoothing: antialiased;
+    transition: background-color 0.4s ease, color 0.4s ease;
+}
+
+/* ==================== Themes ==================== */
+.intent-theme-dark {
+    --intent-bg: #0f0f10;
+    --intent-surface: rgba(255, 255, 255, 0.03);
+    --intent-border: rgba(255, 255, 255, 0.08);
+    --intent-text: #ffffff;
+    --intent-text-muted: rgba(255, 255, 255, 0.5);
+    --intent-accent: rgba(255, 255, 255, 0.7);
+    --intent-accent-soft: rgba(255, 255, 255, 0.08);
+    --intent-code-bg: rgba(255, 255, 255, 0.04);
+    --intent-progress: rgba(255, 255, 255, 0.4);
+    --intent-shadow: 0 40px 120px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    --intent-glass-bg: rgba(10, 10, 12, 0.98);
+}
+
+.intent-theme-light {
+    --intent-bg: #ffffff;
+    --intent-surface: rgba(0, 0, 0, 0.05);
+    --intent-border: rgba(0, 0, 0, 0.1);
+    --intent-text: #1a1a1a;
+    --intent-text-muted: rgba(0, 0, 0, 0.6);
+    --intent-accent: #000000;
+    --intent-accent-soft: rgba(0, 0, 0, 0.08);
+    --intent-code-bg: rgba(0, 0, 0, 0.04);
+    --intent-progress: rgba(0, 0, 0, 0.3);
+    --intent-shadow: 0 40px 120px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
+    --intent-glass-bg: rgba(255, 255, 255, 0.85);
+}
+
+.intent-theme-sepia {
+    --intent-bg: #f4ecd8;
+    --intent-surface: rgba(93, 66, 38, 0.07);
+    --intent-border: rgba(93, 66, 38, 0.12);
+    --intent-text: #5b4636;
+    --intent-text-muted: rgba(91, 70, 54, 0.7);
+    --intent-accent: #433422;
+    --intent-accent-soft: rgba(93, 66, 38, 0.1);
+    --intent-code-bg: rgba(93, 66, 38, 0.05);
+    --intent-progress: rgba(93, 66, 38, 0.4);
+    --intent-shadow: 0 40px 120px rgba(93, 66, 38, 0.15), 0 0 0 1px rgba(93, 66, 38, 0.05);
+    --intent-glass-bg: rgba(244, 236, 216, 0.9);
+}
+
+.intent-theme-light .intent-topbar,
+.intent-theme-sepia .intent-topbar {
+    background: var(--intent-bg);
+    opacity: 0.95;
+}
+
+.intent-theme-light .intent-title,
+.intent-theme-light .intent-content h1,
+.intent-theme-light .intent-content h2,
+.intent-theme-light .intent-content h3,
+.intent-theme-light .intent-content h4,
+.intent-theme-sepia .intent-title,
+.intent-theme-sepia .intent-content h1,
+.intent-theme-sepia .intent-content h2,
+.intent-theme-sepia .intent-content h3,
+.intent-theme-sepia .intent-content h4 {
+    color: var(--intent-text);
+}
+
+.intent-theme-light .intent-settings-panel,
+.intent-theme-sepia .intent-settings-panel {
+    background: var(--intent-bg);
+    border-color: var(--intent-border);
+    box-shadow: 0 40px 100px rgba(0, 0, 0, 0.15);
+}
+
+.intent-theme-light .intent-settings-header span,
+.intent-theme-sepia .intent-settings-header span {
+    color: var(--intent-text);
+}
+
+.intent-theme-light .intent-select,
+.intent-theme-sepia .intent-select {
+    background: var(--intent-surface);
+    border-color: var(--intent-border);
+    color: var(--intent-text);
+}
+
+.intent-theme-light .intent-theme-btn,
+.intent-theme-sepia .intent-theme-btn {
+    background: var(--intent-surface);
+    border-color: var(--intent-border);
+    color: var(--intent-text-muted);
+}
+
+.intent-theme-light .intent-theme-btn.active,
+.intent-theme-sepia .intent-theme-btn.active {
+    background: var(--intent-accent-soft);
+    border-color: var(--intent-text);
+    color: var(--intent-text);
+}
+
+/* Ensure text visibility */
+.intent-mode-active * {
+    border-color: var(--intent-border);
+}
+
+.intent-mode-active h1,
+.intent-mode-active h2,
+.intent-mode-active h3,
+.intent-mode-active h4,
+.intent-mode-active h5,
+.intent-mode-active h6,
+.intent-mode-active p,
+.intent-mode-active li,
+.intent-mode-active span,
+.intent-mode-active time,
+.intent-mode-active div,
+.intent-mode-active article,
+.intent-mode-active section,
+.intent-mode-active nav,
+.intent-mode-active footer,
+.intent-mode-active header {
+    color: var(--intent-text);
+}
+
+/* ==================== Progress Bar ==================== */
+.intent-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: transparent;
+    z-index: 1001;
+}
+
+.intent-progress-bar {
+    height: 100%;
+    width: 0;
+    background: linear-gradient(90deg,
+            var(--intent-progress),
+            rgba(255, 255, 255, 0.6),
+            var(--intent-progress));
+    background-size: 200% 100%;
+    transition: width 0.1s ease-out;
+    animation: progressShimmer 2s ease-in-out infinite;
+}
+
+@keyframes progressShimmer {
+    0% {
+        background-position: 100% 0;
+    }
+
+    100% {
+        background-position: -100% 0;
+    }
+}
+
+@keyframes badgePulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+    }
+
+    50% {
+        box-shadow: 0 0 18px 4px rgba(255, 255, 255, 0.15);
+    }
+}
+
+@keyframes pressEffect {
+    0% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(0.92);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+@keyframes slideFromLeft {
+    from {
+        transform: translateX(-10px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes tocItemGlow {
+    0% {
+        background: transparent;
+    }
+
+    50% {
+        background: rgba(255, 255, 255, 0.08);
+    }
+
+    100% {
+        background: rgba(255, 255, 255, 0.03);
+    }
+}
+
+/* ==================== Top Bar ==================== */
+.intent-topbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 48px;
+    background: var(--intent-bg);
+    opacity: 0.95;
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-bottom: 1px solid var(--intent-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 24px;
+    z-index: 1000;
+}
+
+.intent-topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.intent-topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.intent-badge {
+    background: var(--intent-accent-soft);
+    color: var(--intent-accent);
+    padding: 5px 12px;
+    border-radius: 100px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    animation: badgePulse 3s ease-in-out infinite;
+}
+
+.intent-badge-isolate {
+    background: rgba(59, 130, 246, 0.15) !important;
+    color: #3b82f6 !important;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    animation: none;
+}
+
+.intent-reading-time {
+    color: var(--intent-text-muted);
+    font-size: 12px;
+}
+
+.intent-btn {
+    background: transparent;
+    border: 1px solid var(--intent-border);
+    color: var(--intent-text-muted);
+    padding: 6px 14px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 550;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.intent-btn:hover {
+    background: var(--intent-accent-soft);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: var(--intent-text);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.intent-btn:active {
+    transform: translateY(0) scale(0.96);
+    transition: transform 0.1s ease;
+}
+
+/* Loading state for buttons */
+.intent-btn-loading {
+    position: relative;
+    pointer-events: none;
+    opacity: 0.8;
+}
+
+.intent-btn-loading svg {
+    animation: btnSpin 1.5s linear infinite;
+}
+
+@keyframes btnSpin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Icon buttons */
+.intent-btn-icon {
+    padding: 7px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.intent-btn-icon svg {
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.intent-btn-icon:hover svg {
+    transform: scale(1.15);
+}
+
+.intent-btn-close {
+    margin-left: 6px;
+    color: var(--intent-text-muted);
+}
+
+.intent-btn-close:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--intent-text);
+}
+
+/* ==================== Reader Container ==================== */
+.intent-reader {
+    display: flex;
+    justify-content: center;
+    padding: 80px 24px 60px;
+    min-height: 100vh;
+}
+
+/* ==================== Table of Contents ==================== */
+.intent-toc {
+    position: fixed;
+    left: 24px;
+    top: 100px;
+    width: 220px;
+    max-height: calc(100vh - 150px);
+    background: var(--intent-surface);
+    border: 1px solid var(--intent-border);
+    border-radius: 12px;
+    padding: 16px;
+    overflow-y: auto;
+    z-index: 100;
+    transition: all 0.2s ease;
+}
+
+.intent-toc.collapsed .intent-toc-list {
+    display: none;
+}
+
+.intent-toc.collapsed {
+    width: auto;
+}
+
+.intent-toc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--intent-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.intent-toc-toggle {
+    background: none;
+    border: none;
+    color: var(--intent-text-muted);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.intent-toc-toggle:hover {
+    background: var(--intent-border);
+}
+
+.intent-toc-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.intent-toc-item {
+    margin: 0;
+    padding: 0;
+}
+
+.intent-toc-item a {
+    display: block;
+    padding: 8px 0;
+    color: var(--intent-text-muted);
+    font-size: 13px;
+    text-decoration: none;
+    border-left: 2px solid transparent;
+    padding-left: 12px;
+    margin-left: -16px;
+    margin-right: -16px;
+    padding-right: 16px;
+    transition: all 0.15s ease;
+    line-height: 1.4;
+}
+
+.intent-toc-item a:hover {
+    color: var(--intent-text);
+    background: rgba(255, 255, 255, 0.03);
+    border-left-color: var(--intent-accent);
+    animation: slideFromLeft 0.2s ease;
+}
+
+.intent-toc-item.level-2 a {
+    padding-left: 12px;
+}
+
+.intent-toc-item.level-3 a {
+    padding-left: 24px;
+    font-size: 12px;
+}
+
+/* Hide TOC on smaller screens */
+@media (max-width: 1200px) {
+    .intent-toc {
+        display: none;
+    }
+}
+
+/* ==================== Article ==================== */
+.intent-article {
+    width: 100%;
+    max-width: var(--intent-max-width, 680px);
+}
+
+.intent-header {
+    margin-bottom: 48px;
+    padding-bottom: 32px;
+    border-bottom: 1px solid var(--intent-border);
+}
+
+.intent-title {
+    font-size: 2.5em;
+    font-weight: 700;
+    line-height: 1.2;
+    margin: 0 0 16px;
+    letter-spacing: -0.03em;
+    /* Slightly tighter for modern feel */
+    color: var(--intent-text);
+}
+
+.intent-meta {
+    color: var(--intent-text-muted);
+    font-size: 14px;
+}
+
+/* ==================== Content Styling ==================== */
+.intent-content {
+    color: var(--intent-text);
+    font-size: var(--intent-font-size, 18px);
+    line-height: var(--intent-line-height, 1.75);
+    letter-spacing: var(--intent-letter-spacing, 0.01em);
+    transition: font-size 0.3s ease, line-height 0.3s ease, letter-spacing 0.3s ease;
+}
+
+.intent-content h1,
+.intent-content h2,
+.intent-content h3,
+.intent-content h4,
+.intent-content h5,
+.intent-content h6 {
+    color: var(--intent-text);
+    font-weight: 600;
+    margin: 2em 0 0.75em;
+    line-height: 1.3;
+    letter-spacing: -0.02em;
+    scroll-margin-top: 80px;
+}
+
+.intent-content h1 {
+    font-size: 1.8em;
+}
+
+.intent-content h2 {
+    font-size: 1.5em;
+}
+
+.intent-content h3 {
+    font-size: 1.25em;
+}
+
+.intent-content h4 {
+    font-size: 1.1em;
+}
+
+.intent-content p {
+    margin: 0 0 1.5em;
+}
+
+.intent-content a {
+    color: var(--intent-accent);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.15s;
+}
+
+.intent-content a:hover {
+    border-bottom-color: var(--intent-accent);
+}
+
+/* ==================== Hold That Thought ==================== */
+.intent-htt-tooltip {
+    position: absolute;
+    z-index: 10000;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    pointer-events: none;
+    display: flex;
+    background: var(--intent-glass-bg);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid var(--intent-border);
+    border-radius: 100px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.intent-htt-tooltip.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.intent-htt-tooltip-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: transparent;
+    border: none;
+    color: var(--intent-text);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.intent-htt-tooltip-btn:hover {
+    background: var(--intent-accent-soft);
+    color: var(--intent-text);
+}
+
+.intent-htt-tooltip-divider {
+    width: 1px;
+    height: 14px;
+    background: var(--intent-border);
+    align-self: center;
+}
+
+/* ==================== Hold That Thought Panel (Modal) ==================== */
+.intent-htt-panel {
+    position: fixed !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -40%) scale(0.95);
+    width: 440px;
+    max-width: 90vw;
+    background: var(--intent-glass-bg);
+    backdrop-filter: blur(60px) saturate(210%);
+    -webkit-backdrop-filter: blur(60px) saturate(210%);
+    border: 1px solid rgba(255, 255, 255, 1);
+    /* Glossy border */
+    border-radius: 28px;
+    box-shadow: var(--intent-shadow);
+    z-index: 2147483647 !important;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.intent-htt-panel.open {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.intent-htt-panel-header {
+    padding: 24px 28px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.intent-htt-panel-header h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--intent-text);
+    letter-spacing: -0.01em;
+}
+
+.intent-htt-panel-content {
+    padding: 0 28px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.intent-htt-preview {
+    background: var(--intent-surface);
+    border: 1px solid var(--intent-border);
+    border-radius: 16px;
+    padding: 16px;
+    position: relative;
+    max-height: 120px;
+    overflow-y: auto;
+}
+
+.intent-htt-preview::-webkit-scrollbar {
+    width: 4px;
+}
+
+.intent-htt-preview::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+}
+
+.intent-htt-selected-text {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--intent-text);
+    font-style: italic;
+    opacity: 0.85;
+    font-family: Georgia, serif;
+}
+
+.intent-htt-field {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.intent-htt-field label {
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--intent-text-muted);
+}
+
+.intent-htt-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.intent-htt-tag {
+    background: var(--intent-surface);
+    border: 1px solid var(--intent-border);
+    border-radius: 100px;
+    padding: 7px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--intent-text-muted);
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.intent-htt-tag:hover {
+    background: var(--intent-accent-soft);
+    color: var(--intent-text);
+    transform: translateY(-1px);
+}
+
+.intent-htt-tag.active {
+    background: var(--intent-accent-soft);
+    border-color: var(--intent-text);
+    color: var(--intent-text);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+#httContext {
+    width: 100%;
+    min-height: 90px;
+    background: var(--intent-surface);
+    border: 1px solid var(--intent-border);
+    border-radius: 16px;
+    padding: 14px;
+    color: var(--intent-text);
+    font-family: inherit;
+    font-size: 14px;
+    resize: none;
+    outline: none;
+    transition: all 0.2s;
+}
+
+#httContext:focus {
+    border-color: var(--intent-text-muted);
+    background: var(--intent-bg);
+}
+
+.intent-htt-panel-footer {
+    padding: 20px 28px 28px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    border-top: 1px solid var(--intent-border);
+}
+
+.intent-htt-cancel,
+.intent-htt-save {
+    padding: 12px 24px;
+    border-radius: 14px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    border: 1px solid transparent;
+}
+
+.intent-htt-cancel {
+    background: transparent;
+    border: 1px solid var(--intent-border);
+    color: var(--intent-text-muted);
+}
+
+.intent-htt-cancel:hover {
+    background: var(--intent-surface);
+    color: var(--intent-text);
+}
+
+.intent-htt-save {
+    background: var(--intent-text);
+    color: var(--intent-bg);
+}
+
+.intent-htt-save:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(255, 255, 255, 0.1);
+    filter: brightness(1.1);
+}
+
+.intent-htt-save:active,
+.intent-htt-cancel:active,
+.intent-btn:active,
+.intent-btn-icon:active {
+    transform: translateY(0) scale(0.96);
+    /* Tactile feedback */
+}
+
+.intent-highlight {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    transition: background 1.5s ease;
+}
+
+.thinking svg {
+    animation: btnSpin 2s linear infinite;
+}
+
+@keyframes btnSpin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.intent-notification {
+    position: fixed;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--intent-glass-bg);
+    border: 1px solid var(--intent-border);
+    padding: 10px 20px;
+    border-radius: 100px;
+    color: var(--intent-text);
+    font-size: 13px;
+    font-weight: 600;
+    z-index: 10000;
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.intent-notification.fade-out {
+    opacity: 0;
+    transform: translate(-50%, 20px);
+}
+
+/* ==================== macOS Close Button ==================== */
+.close-btn-mac {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #FF5F57;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    display: grid;
+    place-items: center;
+    padding: 0;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    box-shadow: 0 2px 8px rgba(255, 95, 87, 0.2);
+    position: relative;
+    overflow: hidden;
+    margin: 0;
+}
+
+.close-btn-mac:hover {
+    background: #FF3B30;
+    transform: scale(1.15) rotate(90deg);
+    box-shadow: 0 4px 12px rgba(255, 59, 48, 0.4);
+}
+
+.close-btn-mac svg {
+    width: 10px;
+    height: 10px;
+    stroke: #3E0000;
+    stroke-width: 2.5px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.close-btn-mac:hover svg {
+    opacity: 1;
+    stroke: white;
+}
+
+/* ==================== Settings Panel ==================== */
+.intent-settings-panel {
+    position: fixed;
+    top: 70px;
+    right: 24px;
+    width: 330px;
+    max-height: calc(100vh - 100px);
+    background: var(--intent-bg);
+    backdrop-filter: blur(50px);
+    -webkit-backdrop-filter: blur(50px);
+    border: 1px solid var(--intent-border);
+    border-radius: 28px;
+    box-shadow: 0 40px 100px rgba(0, 0, 0, 0.7);
+    z-index: 1100;
+    opacity: 0;
+    transform: translateY(-10px) scale(0.95);
+    visibility: hidden;
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.intent-settings-panel.open {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0) scale(1);
+}
+
+.intent-settings-header {
+    padding: 18px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.intent-settings-header span {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--intent-text);
+    letter-spacing: -0.01em;
+}
+
+.intent-settings-tabs {
+    display: flex;
+    padding: 0 20px;
+    gap: 20px;
+    border-bottom: 1px solid var(--intent-border);
+}
+
+.intent-settings-tab {
+    padding: 12px 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--intent-text-muted);
+    cursor: pointer;
+    position: relative;
+    transition: color 0.2s;
+}
+
+.intent-settings-tab:hover {
+    color: var(--intent-text);
+}
+
+.intent-settings-tab.active {
+    color: var(--intent-text);
+}
+
+.intent-settings-tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--intent-accent);
+    border-radius: 100px;
+}
+
+.intent-settings-section {
+    display: none;
+}
+
+.intent-settings-section.active {
+    display: block;
+}
+
+.intent-settings-body {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    overflow-y: auto;
+}
+
+.intent-settings-body::-webkit-scrollbar {
+    width: 4px;
+}
+
+.intent-settings-body::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+}
+
+.intent-setting-group label {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--intent-text-muted);
+    margin-bottom: 12px;
+}
+
+/* Theme Options */
+.intent-theme-options {
+    display: flex;
+    gap: 10px;
+}
+
+.intent-theme-btn {
+    flex: 1;
+    height: 44px;
+    background: var(--intent-surface);
+    border: 1px solid var(--intent-border);
+    border-radius: 14px;
+    color: var(--intent-text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.intent-theme-btn.active {
+    background: var(--intent-accent-soft);
+    border-color: var(--intent-text);
+    color: var(--intent-text);
+}
+
+/* Select and Slider */
+.intent-select {
+    width: 100%;
+    padding: 12px 16px;
+    background: var(--intent-surface);
+    border: 1px solid var(--intent-border);
+    border-radius: 14px;
+    color: var(--intent-text);
+    font-size: 13px;
+    outline: none;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.intent-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    outline: none;
+}
+
+.intent-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    background: #fff;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 0 12px rgba(0, 0, 0, 0.4);
+}
+
+.intent-slider-value {
+    display: block;
+    font-size: 11px;
+    color: var(--intent-text-muted);
+    font-family: monospace;
+    text-align: right;
+    margin-top: -8px;
+}
+
+/* Card Style Toggles */
+.intent-dyslexia-toggle,
+.intent-vocab-toggle,
+.intent-concept-toggle {
+    display: block !important;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 18px;
+    padding: 16px;
+    transition: all 0.2s ease;
+}
+
+.intent-dyslexia-toggle:hover,
+.intent-vocab-toggle:hover,
+.intent-concept-toggle:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.intent-dyslexia-btn,
+.intent-vocab-btn,
+.intent-concept-btn {
+    width: 100%;
+    background: transparent;
+    border: none;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--intent-text);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
+}
+
+.intent-dyslexia-btn.active,
+.intent-vocab-btn.active,
+.intent-concept-btn.active {
+    color: #4ade80;
+}
+
+.intent-dyslexia-btn svg,
+.intent-vocab-btn svg,
+.intent-concept-btn svg {
+    color: var(--intent-text-muted);
+    flex-shrink: 0;
+}
+
+.intent-dyslexia-btn.active svg,
+.intent-vocab-btn.active svg,
+.intent-concept-btn.active svg {
+    color: #4ade80;
+}
+
+.intent-dyslexia-hint,
+.intent-vocab-hint,
+.intent-concept-hint {
+    display: block;
+    margin-top: 6px;
+    margin-left: 28px;
+    font-size: 11px;
+    color: var(--intent-text-muted);
+    line-height: 1.4;
+}
+
+/* ==================== Vocabulary Tooltip ==================== */
+.vocab-word {
+    position: relative;
+    display: inline-block;
+    border-bottom: 2px dotted rgba(74, 222, 128, 0.4);
+    cursor: help;
+    transition: all 0.2s;
+    z-index: 10;
+}
+
+.vocab-word:hover {
+    background: rgba(74, 222, 128, 0.1);
+    border-bottom-color: #4ade80;
+}
+
+.vocab-tooltip {
+    position: absolute;
+    bottom: 110%;
+    left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    background: var(--intent-bg);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--intent-border);
+    padding: 8px 14px;
+    border-radius: 10px;
+    font-size: 13px;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 1000;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+    pointer-events: none;
+}
+
+.vocab-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: var(--intent-bg);
+}
+
+.vocab-word:hover .vocab-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+}
+
+.vocab-simple {
+    color: #4ade80;
+    font-weight: 700;
+}
+
+.vocab-original {
+    color: var(--intent-text-muted);
+    font-size: 11px;
+    margin-left: 6px;
+    font-weight: 500;
+    text-decoration: none;
+}
+
+/* ==================== Concept Tooltip ==================== */
+.concept-word {
+    position: relative;
+    display: inline-block;
+    border-bottom: 2px dotted rgba(59, 130, 246, 0.4);
+    /* Blue underline for concepts */
+    cursor: help;
+    transition: all 0.2s;
+    z-index: 10;
+}
+
+.concept-word:hover {
+    background: rgba(59, 130, 246, 0.1);
+    border-bottom-color: #3b82f6;
+}
+
+.concept-tooltip {
+    position: absolute;
+    bottom: 110%;
+    left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    background: var(--intent-bg);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--intent-border);
+    padding: 10px 14px;
+    border-radius: 12px;
+    width: 200px;
+    /* Wider for explanations */
+    white-space: normal;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 1000;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+    pointer-events: none;
+}
+
+.concept-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: var(--intent-bg);
+}
+
+.concept-word:hover .concept-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+}
+
+.concept-label {
+    display: block;
+    font-size: 9px;
+    text-transform: uppercase;
+    font-weight: 800;
+    color: #3b82f6;
+    margin-bottom: 4px;
+    letter-spacing: 0.1em;
+}
+
+.concept-text {
+    display: block;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--intent-text);
+    font-weight: 450;
+}
+
+/* ==================== AI Insights Panel ==================== */
+.intent-ai-summary {
+    margin: 40px 0;
+    background: var(--intent-surface);
+    border: 1px solid var(--intent-border);
+    border-radius: 20px;
+    overflow: hidden;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.ai-summary-inner {
+    padding: 32px;
+}
+
+/* ==================== AI Focus Spotlight ==================== */
+.focus-spotlight {
+    position: relative;
+    background: var(--intent-surface);
+    border-left: 4px solid var(--intent-accent);
+    padding: 24px 28px;
+    border-radius: 0 20px 20px 0;
+    margin-left: -28px;
+    margin-right: -28px;
+    margin-top: 20px;
+    margin-bottom: 20px;
+    animation: spotlightPulse 3s ease-in-out infinite, spotlightFadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.25);
+    z-index: 5;
+    transition: all 0.5s ease;
+}
+
+@keyframes spotlightPulse {
+
+    0%,
+    100% {
+        border-left-color: var(--intent-accent);
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    50% {
+        border-left-color: #fff;
+        background: rgba(255, 255, 255, 0.06);
+    }
+}
+
+@keyframes spotlightFadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.98) translateX(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1) translateX(0);
+    }
+}
+
+.ai-summary-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.ai-label {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--intent-text-muted);
+}
+
+.ai-eli5-text {
+    font-size: 16px;
+    color: var(--intent-text);
+    line-height: 1.7;
+    margin: 0;
+}
+
+/* AI Insights Enhancements */
+.ai-summary-footer {
+    display: flex;
+    gap: 12px;
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ai-footer-btn {
+    flex: 1;
+    background: var(--intent-surface);
+    border: 1px solid var(--intent-border);
+    color: var(--intent-text-muted);
+    padding: 12px 20px;
+    border-radius: 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.ai-footer-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #fff;
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+}
+
+.ai-footer-btn:active {
+    transform: translateY(0) scale(0.98);
+}
+
+#aiResearchBtn {
+    background: rgba(16, 163, 127, 0.1);
+    border-color: rgba(16, 163, 127, 0.2);
+    color: #10a37f;
+}
+
+#aiResearchBtn:hover {
+    background: rgba(16, 163, 127, 0.2);
+    border-color: rgba(16, 163, 127, 0.4);
+}
+
+.ai-summary-close {
+    background: var(--intent-surface);
+    border: 1px solid var(--intent-border);
+    color: var(--intent-text-muted);
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    padding: 0;
+    line-height: 1;
+}
+
+.ai-summary-close:hover {
+    background: #FF453A;
+    border-color: #FF453A;
+    color: #fff;
+    transform: rotate(90deg) scale(1.1);
+}
+
+/* Update original summary container for more curves */
+.intent-ai-summary {
+    border-radius: 28px !important;
+}
+
+
+.ai-section-title {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--intent-text-muted);
+    margin-bottom: 12px;
+}
+
+.ai-label-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.ai-stars {
+    color: #10a37f;
+}
+
+.ai-tldr-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.ai-tldr-item {
+    font-size: 15px;
+    margin-bottom: 12px;
+    line-height: 1.6;
+    color: var(--intent-text);
+}
+
+/* ==================== Golden Thread ==================== */
+.golden-thread-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 50;
+    overflow: hidden;
+}
+
+.golden-thread {
+    position: absolute;
+    left: calc(50% - var(--intent-max-width, 680px) / 2 - 30px);
+    width: 2px;
+    height: 100%;
+    background: linear-gradient(to bottom,
+            transparent,
+            var(--intent-accent-soft),
+            var(--intent-accent-soft),
+            transparent);
+    opacity: 0.3;
+    transition: left 0.3s ease;
+}
+
+.golden-thread-seed {
+    position: absolute;
+    left: -4px;
+    top: 50%;
+    width: 10px;
+    height: 10px;
+    background: var(--intent-accent);
+    border-radius: 50%;
+    box-shadow: 0 0 15px var(--intent-accent);
+    transform: translateY(-50%);
+    transition: top 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (max-width: 1200px) {
+    .golden-thread {
+        left: 20px;
+    }
+}

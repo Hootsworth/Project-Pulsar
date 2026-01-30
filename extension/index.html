@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intents - Search</title>
+    <meta name="description" content="Intents - A minimal search engine. No ads. No tracking. Just search.">
+    <!-- Preconnect for performance -->
+    <link rel="preconnect" href="https://api.duckduckgo.com">
+    <link rel="preconnect" href="https://en.wikipedia.org">
+    <link rel="preconnect" href="https://api.github.com">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="styles.css">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500;700;900&display=swap"
+        rel="stylesheet">
+</head>
+
+<body class="home-page">
+    <div class="wallpaper" id="wallpaper"></div>
+    <!-- Thoughts Panel Toggle -->
+    <button class="thoughts-toggle" id="thoughtsToggle" aria-label="My Thoughts">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+        <span class="thoughts-count" id="thoughtsCount">0</span>
+    </button>
+
+    <!-- Thoughts Sidebar Panel -->
+    <div class="thoughts-panel" id="thoughtsPanel">
+        <div class="thoughts-header">
+            <h2>💭 My Thoughts</h2>
+            <button class="close-btn-mac" id="thoughtsClose">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+        <div class="thoughts-list" id="thoughtsList">
+            <p class="thoughts-empty">No thoughts saved yet.<br><small>Select text on any page and right-click → "Hold
+                    That Thought"<br>or press <kbd>Alt+T</kbd></small></p>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Settings Toggle -->
+        <button class="settings-toggle" id="settingsToggle" aria-label="Settings" data-magnetic
+            data-spotlight="settings">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path
+                    d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
+                </path>
+            </svg>
+            <span class="spotlight-badge"></span>
+        </button>
+
+        <!-- Main Content -->
+        <main class="home-main">
+            <div class="focus-banner" id="focusBanner" style="display: none;">
+                <span class="focus-label">DEEP FOCUS ACTIVE</span>
+                <button class="stop-focus" id="stopFocus">Stop Session</button>
+            </div>
+            <p class="greeting" id="greeting"></p>
+            <h1 class="logo">INTENTS</h1>
+            <p class="tagline">Search with purpose</p>
+
+
+            <form class="search-form" id="searchForm">
+                <div class="search-wrapper">
+                    <span class="search-ghost" id="searchGhost" aria-hidden="true"></span>
+                    <input type="text" name="q" class="search-input" placeholder="Search..." autocomplete="off"
+                        autofocus id="searchInput">
+                    <span class="search-hint" id="searchHint">Tab to complete</span>
+                    <button type="submit" class="search-btn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <path d="m21 21-4.35-4.35"></path>
+                        </svg>
+                    </button>
+                </div>
+                <div class="recent-searches" id="recentSearches"></div>
+            </form>
+
+            <!-- Quick Links -->
+            <div class="quick-links" id="quickLinks">
+                <div class="links-grid" id="linksGrid"></div>
+            </div>
+
+            <!-- Echoes (Resume Reading) -->
+            <div class="echoes-section" id="echoesSection" style="display: none;">
+                <h2 class="section-title">Echoes</h2>
+                <div class="echoes-grid" id="echoesGrid">
+                    <!-- Echo cards injected here -->
+                </div>
+            </div>
+
+            <!-- Intents Search Modal (Omnibox USP) -->
+            <div class="intents-search-modal" id="intentsSearchModal">
+                <div class="intents-search-container">
+                    <div class="intents-search-header">
+                        <h2 class="intents-search-title">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <path d="m21 21-4.35-4.35"></path>
+                            </svg>
+                            <span id="intentsSearchQuery">Intents Search</span>
+                        </h2>
+                        <button class="close-btn-mac" id="closeIntentsSearch">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round">
+                                <path d="M18 6L6 18M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="intents-search-body" id="intentsSearchBody">
+                        <!-- AI summary and results injected here -->
+                    </div>
+                    <div class="intents-search-fallback" id="intentsSearchFallback" style="display: none;">
+                        <p>No results found.</p>
+                        <a href="#" id="intentsGoogleFallback" class="fallback-link">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                                <polyline points="15 3 21 3 21 9"></polyline>
+                                <line x1="10" y1="14" x2="21" y2="3"></line>
+                            </svg>
+                            Search with Google
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+
+        </main>
+
+
+        <!-- Time Watermark -->
+        <div class="watermark-container">
+            <div class="watermark-time" id="currentTime"></div>
+            <div class="watermark-date" id="currentDate"></div>
+        </div>
+
+        <!-- Release Notes Button (Corner) -->
+        <button class="version-badge" id="versionBtn" title="Release Notes">v5.5.0</button>
+
+        <!-- System Awareness Widget -->
+        <div class="system-widget glass-panel" id="systemWidget" title="System Awareness & Resource Load">
+            <div class="system-icon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                    <line x1="8" y1="21" x2="16" y2="21"></line>
+                    <line x1="12" y1="17" x2="12" y2="21"></line>
+                </svg>
+            </div>
+            <div class="system-load-details">
+                <div class="load-bar-container">
+                    <div class="load-bar" id="cpuBar"></div>
+                </div>
+                <div class="load-bar-container">
+                    <div class="load-bar" id="memBar"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Deep Focus Timer -->
+        <div class="focus-widget glass-panel" id="focusWidget">
+            <button class="focus-toggle" id="focusToggle" title="Start Focus Session">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                <span id="focusTime">25:00</span>
+            </button>
+        </div>
+
+        <!-- Thought Canvas Trigger -->
+        <button class="canvas-trigger glass-panel" id="openCanvasBtn" title="Thought Canvas (Spatial Map)" data-magnetic
+            data-spotlight="canvas">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+            </svg>
+            <span class="spotlight-badge"></span>
+        </button>
+
+        <!-- Keyboard Shortcuts Info -->
+        <div class="shortcuts-hint">
+            <kbd>/</kbd> focus search
+        </div>
+    </div>
+
+    <!-- Continue Reading Shelf (Bottom-Right) -->
+    <div class="reading-shelf hidden" id="readingShelf">
+        <div class="shelf-header">
+            <span class="shelf-title">📖 Continue Reading</span>
+            <button class="shelf-clear" id="shelfClear" title="Clear all">Clear</button>
+        </div>
+        <div class="shelf-items" id="shelfItems"></div>
+    </div>
+
+
+    <!-- Settings Modal -->
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button class="close-btn-mac" id="closeSettings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+
+
+                <div class="setting-group">
+                    <label class="setting-label">Color Mode</label>
+                    <div class="theme-options">
+                        <button class="theme-btn active" data-theme="dark">Dark</button>
+                        <button class="theme-btn" data-theme="light">Light</button>
+                    </div>
+                </div>
+
+                <!-- Display Settings Section -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Display</h3>
+                    <div class="setting-group">
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <label class="setting-label">Show Quick Links</label>
+                                <span class="setting-desc">Display shortcut links below search</span>
+                            </div>
+                            <label class="toggle">
+                                <input type="checkbox" id="showQuickLinks" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="setting-group">
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <label class="setting-label">Show Time Watermark</label>
+                                <span class="setting-desc">Subtle time display in background</span>
+                            </div>
+                            <label class="toggle">
+                                <input type="checkbox" id="showTimeWatermark">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Behavior Settings Section -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Behavior</h3>
+                    <div class="setting-group">
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <label class="setting-label">Open Results in New Tab</label>
+                                <span class="setting-desc">Search results open in new tab</span>
+                            </div>
+                            <label class="toggle">
+                                <input type="checkbox" id="newTabResults">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="setting-group">
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <label class="setting-label">Force Dark Mode</label>
+                                <span class="setting-desc">Apply dark mode to all websites</span>
+                            </div>
+                            <label class="toggle">
+                                <input type="checkbox" id="forceDarkMode">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="setting-group">
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <label class="setting-label">Offline Zen Mode</label>
+                                <span class="setting-desc">Redirect to calm game when offline</span>
+                            </div>
+                            <div class="setting-actions" style="display: flex; align-items: center; gap: 12px;">
+                                <button class="test-game-btn" id="testOfflineGame" title="Preview Game"
+                                    style="background: none; border: 1px solid rgba(255,255,255,0.1); color: inherit; padding: 4px 12px; border-radius: 12px; font-size: 0.8rem; cursor: pointer; opacity: 0.7; transition: all 0.2s;">
+                                    Test
+                                </button>
+                                <label class="toggle">
+                                    <input type="checkbox" id="offlineGame">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Accessibility & Preferences Section -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Preferences</h3>
+                    <div class="setting-group">
+                        <label class="setting-label">Accent Color</label>
+                        <div class="accent-options" id="accentOptions">
+                            <button class="accent-btn active" data-accent="default" title="Default Blue"
+                                style="--accent-color: #007aff;"></button>
+                            <button class="accent-btn" data-accent="ocean" title="Ocean"
+                                style="--accent-color: #0ea5e9;"></button>
+                            <button class="accent-btn" data-accent="forest" title="Forest"
+                                style="--accent-color: #22c55e;"></button>
+                            <button class="accent-btn" data-accent="sunset" title="Sunset"
+                                style="--accent-color: #f97316;"></button>
+                            <button class="accent-btn" data-accent="midnight" title="Midnight"
+                                style="--accent-color: #8b5cf6;"></button>
+                            <button class="accent-btn" data-accent="lavender" title="Lavender"
+                                style="--accent-color: #ec4899;"></button>
+                        </div>
+                    </div>
+                    <div class="setting-group">
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <label class="setting-label">Enable Sounds</label>
+                                <span class="setting-desc">Subtle UI feedback sounds</span>
+                            </div>
+                            <label class="toggle">
+                                <input type="checkbox" id="enableSounds">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="setting-group">
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <label class="setting-label">Reduce Animations</label>
+                                <span class="setting-desc">Minimize motion for accessibility</span>
+                            </div>
+                            <label class="toggle">
+                                <input type="checkbox" id="reduceMotion">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Wallpaper Section -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Wallpaper</h3>
+                    <div class="setting-group">
+                        <div class="bg-options" id="bgOptions">
+                            <button class="bg-btn active" data-bg="none" title="Default">
+                                <div class="bg-preview none"></div>
+                            </button>
+                            <button class="bg-btn" data-bg="photo-1506905925346-21bda4d32df4" title="Misty Mountains">
+                                <img src="https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=150&q=60"
+                                    alt="">
+                            </button>
+                            <button class="bg-btn" data-bg="photo-1518837695005-2083093ee35b" title="Calm Ocean">
+                                <img src="https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=150&q=60"
+                                    alt="">
+                            </button>
+                            <button class="bg-btn" data-bg="minimal-gradient" title="Minimal Gradient">
+                                <div class="bg-preview gradient-preview"></div>
+                            </button>
+                            <button class="bg-btn" data-bg="minimal-mesh" title="Subtle Mesh">
+                                <div class="bg-preview mesh-preview"></div>
+                            </button>
+                            <button class="bg-btn btn-unsplash-random" id="randomBgBtn"
+                                title="Surprise Me (Unsplash Random)">
+                                <div class="bg-preview random-preview">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2">
+                                        <path d="M2 18l10-10 10 10"></path>
+                                        <path d="M2 12l10-10 10 10"></path>
+                                    </svg>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label">Search Custom Wallpaper</label>
+                        <div class="bg-search-box">
+                            <input type="text" id="bgSearchInput" class="setting-input"
+                                placeholder="e.g. 'Cyberpunk', 'Iceland'">
+                            <button class="bg-search-btn" id="bgSearchBtn">Search</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI Configuration Section -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">AI Configuration</h3>
+
+                    <div class="setting-group">
+                        <label class="setting-label">AI Model Provider</label>
+                        <select id="aiProviderSelect" class="setting-input" style="padding: 8px;">
+                            <option value="openai">OpenAI (GPT-4o)</option>
+                            <option value="gemini">Google Gemini (Gemini 2.5 Flash)</option>
+                            <option value="grok">xAI Grok (Grok 4.1)</option>
+                            <option value="llama">Meta Llama (Llama 4 Maverick)</option>
+                        </select>
+                    </div>
+
+                    <!-- OpenAI Key Input -->
+                    <div class="setting-group ai-key-group" id="keyGroup_openai">
+                        <label class="setting-label">OpenAI API Key</label>
+                        <div class="bg-search-box">
+                            <input type="password" id="openaiKeyInput" class="setting-input" placeholder="sk-...">
+                            <button class="bg-search-btn save-key-btn" data-provider="openai">Save</button>
+                        </div>
+                    </div>
+
+                    <!-- Gemini Key Input -->
+                    <div class="setting-group ai-key-group hidden" id="keyGroup_gemini">
+                        <label class="setting-label">Gemini API Key</label>
+                        <div class="bg-search-box">
+                            <input type="password" id="geminiKeyInput" class="setting-input" placeholder="AIzaSy...">
+                            <button class="bg-search-btn save-key-btn" data-provider="gemini">Save</button>
+                        </div>
+                    </div>
+
+                    <!-- Grok Key Input -->
+                    <div class="setting-group ai-key-group hidden" id="keyGroup_grok">
+                        <label class="setting-label">Grok API Key</label>
+                        <div class="bg-search-box">
+                            <input type="password" id="grokKeyInput" class="setting-input" placeholder="xai-...">
+                            <button class="bg-search-btn save-key-btn" data-provider="grok">Save</button>
+                        </div>
+                    </div>
+
+                    <!-- Llama/Groq Key Input -->
+                    <div class="setting-group ai-key-group hidden" id="keyGroup_llama">
+                        <label class="setting-label">Llama (Groq) API Key</label>
+                        <div class="bg-search-box">
+                            <input type="password" id="llamaKeyInput" class="setting-input" placeholder="gsk_...">
+                            <button class="bg-search-btn save-key-btn" data-provider="llama">Save</button>
+                        </div>
+                    </div>
+
+                    <span class="setting-desc"
+                        style="display: block; margin-top: 12px; font-size: 0.75rem; opacity: 0.7;">
+                        Selected provider powers "Go Search" and AI Assistants.
+                    </span>
+                </div>
+
+                <div class="setting-divider"></div>
+                <button class="setting-btn" id="showCommandsBtn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path
+                            d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z" />
+                    </svg>
+                    Keyboard Shortcuts
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Commands/Shortcuts Modal -->
+    <div class="modal" id="commandsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Keyboard Shortcuts</h2>
+                <button class="close-btn-mac" id="closeCommands">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="shortcuts-section">
+                    <h3 class="shortcuts-heading">New Tab</h3>
+                    <div class="shortcut-row">
+                        <span class="shortcut-desc">Focus search</span>
+                        <div class="shortcut-keys">
+                            <kbd>/</kbd>
+                        </div>
+                    </div>
+                    <div class="shortcut-row">
+                        <span class="shortcut-desc">Select intent (1-2)</span>
+                        <div class="shortcut-keys">
+                            <kbd>1</kbd> <kbd>2</kbd>
+                        </div>
+                    </div>
+                    <div class="shortcut-row">
+                        <span class="shortcut-desc">Close modals</span>
+                        <div class="shortcut-keys">
+                            <kbd>Esc</kbd>
+                        </div>
+                    </div>
+                </div>
+                <div class="shortcuts-section">
+                    <h3 class="shortcuts-heading">Any Page</h3>
+                    <div class="shortcut-row">
+                        <span class="shortcut-desc">Hold That Thought</span>
+                        <div class="shortcut-keys">
+                            <kbd>Alt</kbd> + <kbd>T</kbd>
+                        </div>
+                    </div>
+                    <div class="shortcut-row">
+                        <span class="shortcut-desc">Ping Me (reminder)</span>
+                        <div class="shortcut-keys">
+                            <kbd>Alt</kbd> + <kbd>P</kbd>
+                        </div>
+                    </div>
+                    <div class="shortcut-row">
+                        <span class="shortcut-desc">Quick AI</span>
+                        <div class="shortcut-keys">
+                            <kbd>Alt</kbd> + <kbd>A</kbd>
+                        </div>
+                    </div>
+                    <div class="shortcut-row">
+                        <span class="shortcut-desc">Smart AI & Wikipedia lookup</span>
+                        <div class="shortcut-keys">
+                            <kbd>Alt</kbd> + <kbd>Q</kbd>
+                        </div>
+                    </div>
+                    <div class="shortcut-row">
+                        <span class="shortcut-desc">Footsteps (browsing trail)</span>
+                        <div class="shortcut-keys">
+                            <kbd>Alt</kbd> + <kbd>B</kbd>
+                        </div>
+                    </div>
+                </div>
+                <div class="shortcuts-section">
+                    <h3 class="shortcuts-heading">Context Menu (Right-click)</h3>
+                    <div class="shortcut-row">
+                        <span class="shortcut-desc">👣 Footsteps Trail</span>
+                        <span class="shortcut-note">On any page</span>
+                    </div>
+                </div>
+                <div class="shortcut-row">
+                    <span class="shortcut-desc">🔍 Isolate Section</span>
+                    <span class="shortcut-note">On selected text</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
+
+    <!-- Lyrics / Karaoke Modal -->
+    <div class="modal" id="lyricsModal">
+        <div class="modal-content modal-lyrics">
+            <div class="modal-header">
+                <div class="lyrics-header-info">
+                    <h2 id="lyricsSongTitle">Song Title</h2>
+                    <span id="lyricsArtistName">Artist Name</span>
+                </div>
+                <button class="close-btn-mac" id="closeLyrics">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body lyrics-body">
+                <div id="lyricsContainer" class="lyrics-container">
+                    <!-- Lines will be injected here -->
+                </div>
+                <div class="lyrics-controls">
+                    <button class="karaoke-btn" id="btnStartKaraoke">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                            <line x1="12" y1="19" x2="12" y2="22" />
+                            <line x1="8" y1="22" x2="16" y2="22" />
+                        </svg>
+                        Start Karaoke
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Link Modal -->
+    <div class="modal" id="addLinkModal">
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <h2>Add Quick Link</h2>
+                <button class="close-btn-mac" id="closeAddLink">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <label class="setting-label">Name</label>
+                    <input type="text" class="setting-input" id="linkName" placeholder="e.g., GitHub">
+                </div>
+                <div class="setting-group">
+                    <label class="setting-label">URL</label>
+                    <input type="url" class="setting-input" id="linkUrl" placeholder="https://github.com">
+                </div>
+                <button class="save-link-btn" id="saveLink">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Thought Canvas Modal -->
+    <div id="canvasModal" class="modal canvas-modal">
+        <div class="canvas-container">
+            <div class="canvas-header">
+                <div class="canvas-title">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+                    </svg>
+                    <span>Thought Canvas</span>
+                </div>
+                <!-- Canvas Toolbar -->
+                <div class="canvas-toolbar">
+                    <button class="canvas-tool-btn" id="connectModeBtn" title="Connect Mode (C)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <circle cx="5" cy="12" r="3" />
+                            <circle cx="19" cy="12" r="3" />
+                            <path d="M8 12h8" />
+                        </svg>
+                    </button>
+                    <button class="canvas-tool-btn" id="addNoteBtn" title="Add Note (N)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                            <path d="M12 8v8M8 12h8" />
+                        </svg>
+                    </button>
+                    <div class="canvas-tool-divider"></div>
+                    <button class="canvas-tool-btn" id="zoomOutBtn" title="Zoom Out (-)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <circle cx="11" cy="11" r="8" />
+                            <path d="M21 21l-4.35-4.35M8 11h6" />
+                        </svg>
+                    </button>
+                    <span class="canvas-zoom-level" id="zoomLevel">100%</span>
+                    <button class="canvas-tool-btn" id="zoomInBtn" title="Zoom In (+)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <circle cx="11" cy="11" r="8" />
+                            <path d="M21 21l-4.35-4.35M11 8v6M8 11h6" />
+                        </svg>
+                    </button>
+                    <button class="canvas-tool-btn" id="zoomResetBtn" title="Reset Zoom">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                            <path d="M21 3v5h-5" />
+                        </svg>
+                    </button>
+                </div>
+                <div class="canvas-actions">
+                    <button class="canvas-action-btn" id="canvasReset" title="Clear Canvas">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path
+                                d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2">
+                            </path>
+                        </svg>
+                    </button>
+                    <button class="close-btn-mac" id="closeCanvas" title="Close Canvas">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round">
+                            <path d="M18 6L6 18M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="canvas-workspace" id="canvasWorkspace">
+                <div class="canvas-grid-bg"></div>
+                <!-- SVG Layer for Connectors -->
+                <svg class="canvas-connectors" id="canvasConnectors"></svg>
+                <div class="canvas-content" id="canvasContent">
+                    <!-- Draggable thoughts injected here -->
+                </div>
+                <!-- Thought Basket -->
+                <div class="thought-basket" id="thoughtBasket">
+                    <div class="basket-icon">
+                        <!-- Woven Basket SVG -->
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none" class="basket-svg">
+                            <!-- Basket Handle -->
+                            <path d="M12 18C12 10 18 6 24 6C30 6 36 10 36 18" stroke="url(#basketHandle)"
+                                stroke-width="3" stroke-linecap="round" fill="none" class="basket-handle" />
+                            <!-- Basket Body -->
+                            <path d="M8 20h32l-4 20H12L8 20z" fill="url(#basketBody)" class="basket-body" />
+                            <!-- Weave Lines Horizontal -->
+                            <path d="M9 24h30M10 28h28M11 32h26M12 36h24" stroke="rgba(139,90,43,0.5)"
+                                stroke-width="1.5" stroke-linecap="round" />
+                            <!-- Weave Lines Vertical -->
+                            <path d="M16 20v18M20 20v19M24 20v20M28 20v19M32 20v18" stroke="rgba(139,90,43,0.4)"
+                                stroke-width="1" stroke-dasharray="3 2" />
+                            <!-- Basket Rim -->
+                            <ellipse cx="24" cy="20" rx="16" ry="3" fill="url(#basketRim)" />
+                            <!-- Shine -->
+                            <ellipse cx="18" cy="26" rx="4" ry="2" fill="rgba(255,255,255,0.15)" class="basket-shine" />
+                            <!-- Definitions -->
+                            <defs>
+                                <linearGradient id="basketHandle" x1="12" y1="6" x2="36" y2="6">
+                                    <stop offset="0%" stop-color="#a0522d" />
+                                    <stop offset="50%" stop-color="#cd853f" />
+                                    <stop offset="100%" stop-color="#a0522d" />
+                                </linearGradient>
+                                <linearGradient id="basketBody" x1="8" y1="20" x2="8" y2="40">
+                                    <stop offset="0%" stop-color="#deb887" />
+                                    <stop offset="50%" stop-color="#d2a679" />
+                                    <stop offset="100%" stop-color="#b8860b" />
+                                </linearGradient>
+                                <linearGradient id="basketRim" x1="8" y1="17" x2="8" y2="23">
+                                    <stop offset="0%" stop-color="#8b4513" />
+                                    <stop offset="100%" stop-color="#a0522d" />
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                        <span class="basket-count" id="basketCount">0</span>
+                        <div class="basket-glow"></div>
+                    </div>
+                    <div class="basket-thoughts" id="basketThoughts">
+                        <!-- Thought previews appear here on hover -->
+                    </div>
+                </div>
+            </div>
+            <div class="canvas-hint">Hover basket to see thoughts · Drag onto canvas · Connect with lines</div>
+        </div>
+    </div>
+
+    <!-- Release Notes Modal -->
+    <div class="modal" id="releaseNotesModal">
+        <div class="modal-content modal-release">
+            <div class="modal-header">
+                <h2>🚀 Release Notes</h2>
+                <button class="close-btn-mac" id="closeReleaseNotes">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="release-version-header">
+                    <span class="release-version">v5.5.0</span>
+                    <span class="release-date">January 2026</span>
+                    <span class="release-tag">Mastery Update</span>
+                </div>
+
+                <div class="release-section">
+                    <h3 class="release-section-title">💎 Visual Mastery</h3>
+                    <ul class="release-list">
+                        <li><span class="release-badge new">New</span> **Adaptive Accents**: Theme matches your
+                            wallpaper automatically</li>
+                        <li><span class="release-badge new">New</span> **Magnetic Buttons**: Subtle cursor-follow hover
+                            effects</li>
+                        <li><span class="release-badge new">New</span> **3D Parallax**: Perspective tilt on cards and
+                            widgets</li>
+                        <li><span class="release-badge improved">Improved</span> Refined Glassmorphism with noise
+                            texture</li>
+                    </ul>
+                </div>
+
+                <div class="release-section">
+                    <h3 class="release-section-title">🔊 Sensory Design</h3>
+                    <ul class="release-list">
+                        <li><span class="release-badge new">New</span> **UI Soundscape**: Subtle blips, whooshes, and
+                            pops for feedback</li>
+                        <li><span class="release-badge improved">Improved</span> Smooth theme transitions across the
+                            whole interface</li>
+                        <li><span class="release-badge new">New</span> Animated **Skeleton States** for all loading
+                            content</li>
+                    </ul>
+                </div>
+
+                <div class="release-section">
+                    <h3 class="release-section-title">🛡️ Data & Exploration</h3>
+                    <ul class="release-list">
+                        <li><span class="release-badge new">New</span> **Data Sovereignty**: Export/Import your entire
+                            setup via JSON</li>
+                        <li><span class="release-badge new">New</span> **Shortcut Legend**: Press <kbd>?</kbd> to
+                            discover all secrets</li>
+                        <li><span class="release-badge new">New</span> **Konami Code**: 🎮 ↑ ↑ ↓ ↓ ← → ← → B A</li>
+                    </ul>
+                </div>
+
+                <div class="release-section">
+                    <h3 class="release-section-title">⌨️ Core Shortcuts</h3>
+                    <ul class="release-list">
+                        <li><kbd>Alt+T</kbd> — Hold That Thought (adds to Canvas)</li>
+                        <li><kbd>Alt+A</kbd> — Quick AI Assistant</li>
+                        <li><kbd>Ctrl+K</kbd> — Command Palette</li>
+                        <li><kbd>/</kbd> — Focus Search</li>
+                    </ul>
+                </div>
+
+                <div class="release-footer">
+                    <p>Made with ❤️ for focused productivity</p>
+                    <a href="https://github.com/Hootsworth/Intents" target="_blank" class="release-repo-link">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path
+                                d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22">
+                            </path>
+                        </svg>
+                        View Repository on GitHub
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Command Palette -->
+    <div class="command-palette" id="commandPalette">
+        <div class="command-palette-container">
+            <div class="command-palette-header">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="M21 21l-4.35-4.35" />
+                </svg>
+                <input type="text" class="command-palette-input" id="commandInput" placeholder="Type a command..."
+                    autocomplete="off">
+                <button class="close-btn-mac command-palette-close" id="commandPaletteClose"
+                    style="width: 16px; height: 16px;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                        stroke-linecap="round">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div class="command-palette-results" id="commandResults"></div>
+            <div class="command-palette-footer">
+                <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
+                <span><kbd>Enter</kbd> Select</span>
+                <span><kbd>Esc</kbd> Close</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Shortcut Legend Overlay -->
+    <div class="shortcut-legend" id="shortcutLegend">
+        <div class="legend-content glass-panel">
+            <div class="legend-header">
+                <h2>Discovery Legend</h2>
+                <span class="legend-hint">Press <kbd>?</kbd> to dismiss</span>
+            </div>
+            <div class="legend-grid">
+                <div class="legend-col">
+                    <h3>System</h3>
+                    <div class="legend-item"><kbd>?</kbd> Toggle Legend</div>
+                    <div class="legend-item"><kbd>/</kbd> Focus Search</div>
+                    <div class="legend-item"><kbd>Esc</kbd> Close All</div>
+                    <div class="legend-item"><kbd>Ctrl</kbd> + <kbd>K</kbd> Command Palette</div>
+                </div>
+                <div class="legend-col">
+                    <h3>Shortcuts</h3>
+                    <div class="legend-item"><kbd>1</kbd>-<kbd>9</kbd> Quick Open Links</div>
+                    <div class="legend-item"><kbd>Alt</kbd> + <kbd>T</kbd> Hold Thought</div>
+                    <div class="legend-item"><kbd>Alt</kbd> + <kbd>P</kbd> Ping Reminder</div>
+                    <div class="legend-item"><kbd>Alt</kbd> + <kbd>Q</kbd> Smart Search</div>
+                </div>
+                <div class="legend-col">
+                    <h3>Canvas</h3>
+                    <div class="legend-item"><kbd>C</kbd> Connect Mode</div>
+                    <div class="legend-item"><kbd>N</kbd> Add Sticky Note</div>
+                    <div class="legend-item"><kbd>+</kbd> / <kbd>-</kbd> Zoom In/Out</div>
+                    <div class="legend-item"><kbd>0</kbd> Reset Zoom</div>
+                </div>
+            </div>
+            <div class="legend-footer text-mono">↑ ↑ ↓ ↓ ← → ← → B A</div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+
+</html>

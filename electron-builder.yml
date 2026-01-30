@@ -1,0 +1,50 @@
+appId: com.hootsworth.pulsar
+productName: Pulsar
+copyright: Copyright © 2026 Hootsworth
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - "**/*"
+  - "!dist"
+  - "!node_modules/.cache"
+  - "!build"
+
+publish:
+  provider: github
+  owner: Hootsworth
+  repo: Project-Pulsar
+  private: true
+  token: ${GH_TOKEN}
+
+win:
+  target: nsis
+  icon: build/icon.ico
+  verifyUpdateCodeSignature: false # Set to true once you have a cert
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerSidebar: build/installer-sidebar.bmp
+  uninstallerSidebar: build/installer-sidebar.bmp
+  deleteAppDataOnUninstall: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Pulsar Browser
+
+mac:
+  target: dmg
+  icon: build/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+
+linux:
+  target: AppImage
+  icon: build/icon.png
+  category: Network

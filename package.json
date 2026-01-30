@@ -1,0 +1,26 @@
+{
+    "name": "pulsar-browser",
+    "version": "0.0.2",
+    "description": "Experience the web with Pulsar.",
+    "main": "main.js",
+    "scripts": {
+        "start": "electron .",
+        "dist": "electron-builder",
+        "release": "electron-builder --publish always"
+    },
+    "keywords": [
+        "electron",
+        "browser",
+        "pulsar",
+        "intents"
+    ],
+    "author": "Hootsworth",
+    "license": "MIT",
+    "dependencies": {
+        "electron-updater": "^6.3.9"
+    },
+    "devDependencies": {
+        "electron": "^21.4.4",
+        "electron-builder": "^26.0.0"
+    }
+}

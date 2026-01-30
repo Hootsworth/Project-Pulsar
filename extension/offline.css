@@ -1,0 +1,192 @@
+:root {
+    --bg-color: #0c0d10;
+    --accent: #ffffff;
+    --text-primary: rgba(255, 255, 255, 0.9);
+    --text-secondary: rgba(255, 255, 255, 0.5);
+    --glass: rgba(255, 255, 255, 0.03);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glow: rgba(255, 255, 255, 0.4);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+}
+
+body {
+    font-family: 'Inter', -apple-system, system-ui, sans-serif;
+    overflow: hidden;
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+}
+
+.sky {
+    width: 100vw;
+    height: 100vh;
+    background: radial-gradient(circle at 50% 50%, #1a1c24 0%, #0c0d10 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Dynamic background "aurora" effect */
+.sky::before {
+    content: '';
+    position: absolute;
+    width: 200%;
+    height: 200%;
+    top: -50%;
+    left: -50%;
+    background: radial-gradient(ellipse at 50% 50%, rgba(100, 150, 255, 0.03) 0%, transparent 70%);
+    animation: rotate 20s linear infinite;
+    pointer-events: none;
+}
+
+@keyframes rotate {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.ui-layer {
+    position: relative;
+    z-index: 10;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.instructions {
+    margin-top: 15vh;
+    text-align: center;
+    transition: all 1s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.instructions h1 {
+    font-weight: 200;
+    font-size: 4rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+    background: linear-gradient(to bottom, #fff, rgba(255, 255, 255, 0.4));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.instructions p {
+    font-weight: 300;
+    font-size: 0.9rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.score-container {
+    position: absolute;
+    top: 60px;
+    font-weight: 200;
+    font-size: 2.5rem;
+    letter-spacing: -0.05em;
+    opacity: 0.8;
+}
+
+.score-container span {
+    font-size: 1rem;
+    vertical-align: middle;
+    margin-left: 4px;
+    opacity: 0.4;
+}
+
+.game-over {
+    background: var(--glass);
+    backdrop-filter: blur(40px);
+    -webkit-backdrop-filter: blur(40px);
+    border: 1px solid var(--glass-border);
+    padding: 4rem;
+    border-radius: 2rem;
+    text-align: center;
+    display: none;
+    pointer-events: auto;
+    animation: scaleIn 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes scaleIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9) translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.game-over h2 {
+    font-weight: 200;
+    font-size: 2rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+}
+
+.game-over p {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 2.5rem;
+    letter-spacing: 0.1em;
+}
+
+button {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--glass-border);
+    padding: 1rem 3rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    border-radius: 100px;
+    cursor: pointer;
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+button:hover {
+    background: white;
+    color: black;
+    transform: translateY(-2px);
+    box-shadow: 0 10px 30px rgba(255, 255, 255, 0.1);
+}
+
+.hidden {
+    opacity: 0;
+    transform: translateY(-20px);
+}
+
+/* Subtle particle effect in the air */
+.particles {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}

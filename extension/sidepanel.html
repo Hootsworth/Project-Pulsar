@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intents Side Panel</title>
+    <link rel="stylesheet" href="sidepanel.css">
+</head>
+
+<body class="side-panel-body">
+    <div class="glass-container">
+        <header class="panel-header">
+            <h1 class="panel-title">INTENTS</h1>
+            <div class="tab-controls">
+                <button class="tab-btn active" data-tab="thoughts">Thoughts</button>
+                <button class="tab-btn" data-tab="trail">Trail</button>
+                <button class="tab-btn" data-tab="tabs">Tabs</button>
+            </div>
+        </header>
+
+        <main class="panel-content">
+            <div id="thoughts-tab" class="tab-pane active">
+                <div class="search-wrapper">
+                    <input type="text" id="thought-search" placeholder="Search thoughts...">
+                </div>
+                <div id="thoughts-list" class="item-list">
+                    <!-- Thoughts will be injected here -->
+                </div>
+            </div>
+
+            <div id="trail-tab" class="tab-pane">
+                <div id="trail-list" class="item-list">
+                    <!-- Footsteps will be injected here -->
+                </div>
+            </div>
+
+            <div id="tabs-tab" class="tab-pane">
+                <div class="tabs-actions">
+                    <button id="organize-tabs-btn" class="primary-action-btn">
+                        <span class="icon">✨</span> Organize My Tabs
+                    </button>
+                    <p class="tabs-hint">AI will group your messy tabs into logical clusters.</p>
+                </div>
+                <div id="organize-status" class="status-message"></div>
+                <div id="grouped-tabs-list" class="item-list"></div>
+            </div>
+        </main>
+    </div>
+    <script src="sidepanel.js"></script>
+</body>
+
+</html>

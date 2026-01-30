@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zen Float | Offline</title>
+    <link rel="stylesheet" href="offline.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="sky" id="sky">
+        <canvas id="gameCanvas"></canvas>
+
+        <div class="ui-layer">
+            <div class="instructions" id="instructions">
+                <h1>Zen Float</h1>
+                <p>Space or Click to Float</p>
+            </div>
+
+            <div class="score-container" id="scoreContainer" style="display: none;">
+                <span id="score">0</span>
+            </div>
+
+            <div class="game-over" id="gameOver">
+                <h2>Peaceful Pause</h2>
+                <p>Journey of <span id="finalScore">0</span> meters</p>
+                <button id="restartBtn">Resume Drift</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="offline.js"></script>
+</body>
+
+</html>
