@@ -1,6 +1,6 @@
 {
     "name": "pulsar-browser",
-    "version": "0.0.4",
+    "version": "0.1.0",
     "description": "Experience the web with Pulsar.",
     "main": "main.js",
     "scripts": {
