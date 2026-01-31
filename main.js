@@ -516,7 +516,7 @@ function setupTabView(tab) {
     }
 }
 
-function createTab(url = null, isIncognito = false) {
+function createTab(url = null, isIncognito = false, options = {}) {
     try {
         const tabId = tabIdCounter++;
         const tabUrl = url || `file://${NEW_TAB_URL}`;
@@ -527,15 +527,15 @@ function createTab(url = null, isIncognito = false) {
             id: tabId,
             view: null,
             url: tabUrl,
-            title: 'New Tab',
+            title: options.title || 'New Tab',
             loading: true,
-            favicon: null,
+            favicon: options.favicon || null,
             active: false,
             isIncognito: isIncognito,
-            folderId: null,
+            folderId: options.folderId || null,
             lastUsed: Date.now(),
             isDead: false,
-            isPinned: false
+            isPinned: options.isPinned || false
         };
 
         setupTabView(tab);
@@ -724,16 +724,56 @@ function updateTabsList() {
 
     const allTabs = tabs.map(t => ({ id: t.id, title: t.title, url: t.url, favicon: t.favicon }));
     sendToRenderer('tabs-update', { tabs: tabsData, allTabs, folders: folders });
+
+    // Save session
+    saveSession();
+}
+
+function saveSession() {
+    // Only save persistent tabs (not incognito)
+    const persistentTabs = tabs.filter(t => !t.isIncognito).map(t => ({
+        url: t.url,
+        title: t.title,
+        favicon: t.favicon,
+        isPinned: t.isPinned,
+        folderId: t.folderId
+    }));
+
+    // We need to read existing settings first to not overwrite other keys
+    // optimization: maybe cache settings in memory? but for safety read/write
+    try {
+        const settings = loadStorage();
+        settings.savedTabs = persistentTabs;
+        saveStorage(settings);
+    } catch (e) {
+        console.error('[Main] Error saving session:', e);
+    }
 }
 
 // ============================================
 // FOLDER MANAGEMENT
 // ============================================
 
-function createFolder(title = 'New Folder') {
+const FOLDER_COLORS = [
+    '#FF6B6B', // Vibrant Red
+    '#4ECDC4', // Teal/Turquoise
+    '#FFE66D', // Bright Yellow
+    '#FF9F43', // Orange
+    '#5f27cd', // Deep Purple
+    '#54a0ff', // Vivid Blue
+    '#1dd1a1', // Green
+    '#ff6b81'  // Pink
+];
+
+function getRandomFolderColor() {
+    return FOLDER_COLORS[Math.floor(Math.random() * FOLDER_COLORS.length)];
+}
+
+function createFolder(title = 'New Group', color = null) {
     const folder = {
         id: 'folder_' + Date.now(),
         title: title,
+        color: color || getRandomFolderColor(),
         isMinimized: false,
         state: 'used',
         lastUsed: Date.now()
@@ -1262,8 +1302,7 @@ function createWindow() {
 
         mainWindow.webContents.on('did-finish-load', () => {
             console.log('[Main] Main window loaded');
-            // Create initial tab
-            createTab();
+            // Initial tab creation matches moved to app.whenReady to support session restore
         });
 
         // Handle window resize - update all tab bounds
@@ -1387,6 +1426,15 @@ ipcMain.on('folder-create', (event, title) => {
     createFolder(title);
 });
 
+ipcMain.on('folder-update-meta', (event, { id, title, color }) => {
+    const folder = folders.find(f => f.id === id);
+    if (folder) {
+        if (title) folder.title = title;
+        if (color) folder.color = color;
+        updateTabsList();
+    }
+});
+
 ipcMain.on('folder-delete', (event, folderId) => {
     folders = folders.filter(f => f.id !== folderId);
     tabs.forEach(t => { if (t.folderId === folderId) t.folderId = null; });
@@ -1419,6 +1467,10 @@ ipcMain.on('tab-pin', (event, { tabId, pinned }) => {
 ipcMain.handle('ai-search', async (event, { query, settings }) => {
     console.log('[Main] IPC: ai-search');
     return await handleAISearch(query, settings);
+});
+
+ipcMain.handle('get-app-version', () => {
+    return app.getVersion();
 });
 
 ipcMain.on('go-search-trigger', (event, { query }) => {
@@ -2060,6 +2112,40 @@ if (app) {
                 createWindow();
             }
         });
+
+        // Restore Session or Create Initial Tab
+        const savedSettings = loadStorage();
+        if (savedSettings.savedTabs && savedSettings.savedTabs.length > 0) {
+            console.log('[Main] Restoring session...', savedSettings.savedTabs.length, 'tabs');
+            let hasActive = false;
+
+            // Re-create each tab
+            savedSettings.savedTabs.forEach(tData => {
+                // Restore pinned tabs (and others if desired)
+                if (tData.isPinned) {
+                    createTab(tData.url, false, tData);
+                    hasActive = true;
+                }
+            });
+
+            // Also restore normal tabs if desired:
+            /*
+            savedSettings.savedTabs.forEach(tData => {
+                if (!tData.isPinned) {
+                     createTab(tData.url, false, tData);
+                     hasActive = true;
+                }
+            });
+            */
+
+            if (!hasActive) {
+                createTab(); // Fallback
+            }
+
+        } else {
+            // Create initial tab
+            createTab();
+        }
 
         // Check for updates after a short delay to allow window to load
         setTimeout(() => {

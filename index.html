@@ -205,8 +205,13 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2>Settings</h2>
-                <button class="close-red-dot" id="settings-close" title="Close Settings"></button>
+                <button class="close-btn-mac" id="settings-close" title="Close Settings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                </button>
             </div>
+
             <div class="modal-body">
                 <div class="setting-group">
                     <label class="setting-label">Color Mode</label>
@@ -338,6 +343,33 @@
                         style="display: block; margin-top: 12px; font-size: 0.75rem; opacity: 0.7;">
                         Selected provider powers "Go Search" and AI Assistants.
                     </span>
+                </div>
+
+                <!-- Updates Section -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Updates</h3>
+                    <div class="setting-group">
+                        <div class="update-info-row">
+                            <div class="setting-info">
+                                <label class="setting-label">Version</label>
+                                <span class="setting-desc" id="current-version">Checking...</span>
+                            </div>
+                            <button class="accent-button small" id="btn-check-updates">Check for Updates</button>
+                        </div>
+
+                        <div id="update-status-container" class="update-status-container hidden">
+                            <div class="update-status-text" id="update-status-text">Checking for updates...</div>
+                            <div class="update-progress-bar-container hidden" id="update-progress-container">
+                                <div class="update-progress-bar" id="update-progress-bar" style="width: 0%"></div>
+                            </div>
+                            <div class="update-actions">
+                                <button class="accent-button small hidden" id="btn-download-update">Download
+                                    Now</button>
+                                <button class="accent-button small hidden" id="btn-install-update">Restart &
+                                    Install</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

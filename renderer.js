@@ -494,30 +494,67 @@ function renderMainTabs() {
     // 1. Render Folders
     folders.forEach(folder => {
         const folderEl = document.createElement('div');
-        folderEl.className = `folder-container ${folder.isMinimized ? 'minimized' : ''}`;
+        folderEl.className = `folder-container ${folder.isMinimized ? 'minimized' : ''} folder-state-${folder.state}`;
         folderEl.id = folder.id;
 
+        // Dynamic coloring on container for inheritance
+        const baseColor = folder.color || '#5f27cd';
+        folderEl.style.setProperty('--group-color', baseColor);
+
         const header = document.createElement('div');
-        header.className = `folder-header folder-state-${folder.state}`;
+        header.className = `folder-header`;
+        // Styling matches container color
+        header.style.borderColor = baseColor;
+        header.style.background = `${baseColor}15`;
+
         header.innerHTML = `
-            <svg class="folder-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
-            <svg class="folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-            <span class="folder-title">${folder.title}</span>
+            <div class="folder-color-pill" style="background-color: ${baseColor}"></div>
+            <span class="folder-title" style="color: ${baseColor}">${folder.title}</span>
+            <div class="folder-actions">
+                <div class="folder-chevron" style="color: ${baseColor}">
+                     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+            </div>
         `;
 
-        header.title = `State: ${folder.state.toUpperCase()}`;
+        header.title = `Group: ${folder.title}`;
         header.onclick = (e) => {
-            console.log('[Renderer] Header clicked for folder:', folder.id);
+            // Toggle minimize
             if (window.browser?.minimizeFolder) {
                 window.browser.minimizeFolder(folder.id, !folder.isMinimized);
             }
         };
 
-        // Context menu for deletion
+        // Rename on double click
+        header.ondblclick = (e) => {
+            e.stopPropagation();
+            const newTitle = prompt('Rename Group:', folder.title);
+            if (newTitle) {
+                window.browser?.updateFolder(folder.id, { title: newTitle });
+            }
+        };
+
+        // Context menu for color / delete
         header.oncontextmenu = (e) => {
             e.preventDefault();
-            if (confirm(`Delete folder "${folder.title}"?`)) {
-                window.browser?.deleteFolder(folder.id);
+            // Simple approach: Delete or specific color change?
+            // Let's offer a "Change Color" prompt or cycle? 
+            // For a premium feel, let's just use confirm for delete for now, 
+            // maybe add a small custom menu later if requested.
+            // Right now user asked "give names" (done via dblclick or prompt) and "separated by colours".
+
+            // Hacky context menu replacement:
+            const action = confirm(`Manage Group "${folder.title}"?\n\nOK to Delete.\nCancel to Change Color.`);
+            if (action) {
+                if (confirm(`Are you sure you want to Ungroup tabs and delete "${folder.title}"?`)) {
+                    window.browser?.deleteFolder(folder.id);
+                }
+            } else {
+                // Change Color
+                const newColor = prompt('Enter new color (Hex or Name):', folder.color);
+                if (newColor) {
+                    window.browser?.updateFolder(folder.id, { color: newColor });
+                }
             }
         };
 
@@ -803,7 +840,7 @@ document.addEventListener('DOMContentLoaded', initAutohide);
 const btnAddFolder = $('btn-add-folder');
 if (btnAddFolder) {
     btnAddFolder.addEventListener('click', () => {
-        const title = prompt('Folder Name:', 'New Folder');
+        const title = prompt('Group Name:', 'New Group');
         if (title && window.browser?.createFolder) {
             window.browser.createFolder(title);
         }
@@ -1007,3 +1044,94 @@ document.querySelectorAll('.save-key-btn').forEach(btn => {
         }
     };
 });
+
+// ============================================
+// UPDATER UI LOGIC
+// ============================================
+
+function initUpdaterUI() {
+    const btnCheck = $('btn-check-updates');
+    const btnDownload = $('btn-download-update');
+    const btnInstall = $('btn-install-update');
+    const statusContainer = $('update-status-container');
+    const statusText = $('update-status-text');
+    const progressContainer = $('update-progress-container');
+    const progressBar = $('update-progress-bar');
+    const currentVersion = $('current-version');
+
+    // Get current version from main
+    window.browser?.invoke('get-app-version').then(version => {
+        if (currentVersion) currentVersion.textContent = `v${version}`;
+    });
+
+    if (btnCheck) {
+        btnCheck.onclick = () => {
+            statusContainer.classList.remove('hidden');
+            statusText.textContent = 'Checking for updates...';
+            btnCheck.disabled = true;
+            window.browser?.checkUpdates();
+        };
+    }
+
+    if (btnDownload) {
+        btnDownload.onclick = () => {
+            btnDownload.classList.add('hidden');
+            window.browser?.downloadUpdate();
+        };
+    }
+
+    if (btnInstall) {
+        btnInstall.onclick = () => {
+            window.browser?.installUpdate();
+        };
+    }
+
+    if (window.browser?.onUpdateStatus) {
+        window.browser.onUpdateStatus((data) => {
+            console.log('[Renderer] Update status event:', data);
+
+            if (!statusContainer || !statusText) return;
+
+            statusContainer.classList.remove('hidden');
+
+            switch (data.status) {
+                case 'checking':
+                    statusText.textContent = 'Checking for updates...';
+                    break;
+                case 'available':
+                    statusText.textContent = `Update available: v${data.info.version}`;
+                    btnCheck.classList.add('hidden');
+                    // If autoDownload is false, show download button. 
+                    // But in main.js it is true, so it will probably start downloading.
+                    // Let's show "Downloading..." if it starts.
+                    break;
+                case 'not-available':
+                    statusText.textContent = 'You are up to date!';
+                    btnCheck.disabled = false;
+                    setTimeout(() => {
+                        statusContainer.classList.add('hidden');
+                    }, 3000);
+                    break;
+                case 'downloading':
+                    progressContainer.classList.remove('hidden');
+                    const percent = Math.round(data.progress.percent);
+                    progressBar.style.width = `${percent}%`;
+                    statusText.textContent = `Downloading update... ${percent}%`;
+                    break;
+                case 'downloaded':
+                    progressContainer.classList.add('hidden');
+                    statusText.textContent = 'Update downloaded and ready to install.';
+                    btnInstall.classList.remove('hidden');
+                    btnCheck.classList.add('hidden');
+                    break;
+                case 'error':
+                    statusText.textContent = `Error: ${data.error}`;
+                    btnCheck.disabled = false;
+                    break;
+            }
+        });
+    }
+}
+
+document.addEventListener('DOMContentLoaded', initUpdaterUI);
+

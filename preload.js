@@ -65,6 +65,7 @@ try {
 
         // Folders
         createFolder: (title) => ipcSend('folder-create', title),
+        updateFolder: (id, updates) => ipcSend('folder-update-meta', { id, ...updates }),
         deleteFolder: (id) => ipcSend('folder-delete', id),
         minimizeFolder: (id, minimized) => ipcSend('folder-minimize', { folderId: id, minimized }),
 
@@ -89,6 +90,8 @@ try {
 
         // Generic Invoke
         invoke: (channel, ...args) => ipcInvoke(channel, ...args),
+        checkUpdates: () => ipcSend('check-updates'),
+        downloadUpdate: () => ipcSend('download-update'),
         installUpdate: () => ipcSend('install-update'),
 
         // Listeners

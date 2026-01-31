@@ -16,7 +16,7 @@ publish:
   owner: Hootsworth
   repo: Project-Pulsar
   private: true
-  token: ${GH_TOKEN}
+
 
 win:
   target: nsis
@@ -29,12 +29,11 @@ nsis:
   perMachine: true
   installerIcon: build/icon.ico
   uninstallerIcon: build/icon.ico
-  installerSidebar: build/installer-sidebar.bmp
-  uninstallerSidebar: build/installer-sidebar.bmp
   deleteAppDataOnUninstall: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: Pulsar Browser
+
 
 mac:
   target: dmg
