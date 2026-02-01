@@ -71,7 +71,7 @@ try {
         minimizeFolder: (id, minimized) => ipcSend('folder-minimize', { folderId: id, minimized }),
 
         // AI
-        aiSearch: (query, settings) => ipcInvoke('ai-search', { query, settings }),
+        aiSearch: (query, settings, systemPrompt) => ipcInvoke('ai-search', { query, settings, systemPrompt }),
         setAIOverlayVisible: (visible) => ipcSend('set-ai-overlay-visible', visible),
         setSettingsVisibility: (visible) => ipcSend('set-settings-visibility', visible),
         setActionBarVisibility: (visible) => ipcSend('set-action-bar-visible', visible),
@@ -96,6 +96,9 @@ try {
         checkUpdates: () => ipcSend('check-updates'),
         downloadUpdate: () => ipcSend('download-update'),
         installUpdate: () => ipcSend('install-update'),
+
+        getOpenTabs: () => ipcInvoke('get-open-tabs'),
+        extractTabData: (tabId) => ipcInvoke('extract-tab-data', tabId),
 
         // Auth
         startGoogleLogin: () => ipcSend('start-google-login'),

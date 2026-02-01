@@ -1308,35 +1308,47 @@ function getActionBarElements() {
         ghost: $('action-bar-ghost'),
         results: $('action-bar-results'),
         status: $('action-bar-status'),
+        mentions: $('action-bar-mentions'),
         aiResult: $('action-bar-ai-result')
     };
 }
 
-function toggleActionBar(show) {
+function toggleActionBar(show, mode = 'ai') {
     const { overlay, input } = getActionBarElements();
 
-    console.log('[Renderer] toggleActionBar called:', show, 'Overlay exists:', !!overlay);
-
-    if (!overlay) {
-        console.error('[Renderer] Action Bar Overlay not found in DOM!');
-        return;
-    }
+    if (!overlay) return;
 
     if (show) {
         overlay.classList.add('active');
+        if (mode === 'palette') {
+            overlay.classList.add('palette-mode');
+        } else {
+            overlay.classList.remove('palette-mode');
+        }
+
         window.browser?.setActionBarVisibility(true);
         input?.focus();
-        if (input) input.value = '';
+        if (input) {
+            input.value = '';
+            input.placeholder = mode === 'palette' ? 'Type a command...' : 'Search or ask AI';
+            input.style.color = '';
+            input.style.caretColor = '';
+            input.readOnly = false;
+        }
+
         const { status, aiResult, results } = getActionBarElements();
         if (status) status.classList.add('hidden');
         if (aiResult) {
             aiResult.classList.add('hidden');
             aiResult.innerHTML = '';
         }
-        if (results) results.classList.remove('hidden');
-        updateActionBarResults('');
+        const bar = $('action-bar-main');
+        if (bar) bar.classList.remove('expanded');
+
+        updateActionBarResults('', mode);
     } else {
         overlay.classList.remove('active');
+        overlay.classList.remove('palette-mode');
         window.browser?.setActionBarVisibility(false);
     }
 }
@@ -1362,22 +1374,111 @@ const ICONS = {
     globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>'
 };
 
-async function updateActionBarResults(query) {
-    const { results, ghost, status, aiResult } = getActionBarElements();
+let selectedMentionIndex = -1;
+let openTabsForMentions = [];
+
+function renderMarkdown(text) {
+    if (!text) return '';
+
+    // Escape HTML to prevent XSS
+    let html = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    // Tables (Simple markdown table support)
+    html = html.replace(/\|(.+)\|/g, (match, content) => {
+        const cells = content.split('|').map(c => `<td>${c.trim()}</td>`).join('');
+        return `<tr class="ai-table-row">${cells}</tr>`;
+    });
+    html = html.replace(/(<tr class="ai-table-row">.+<\/tr>)+/g, match => `<table class="ai-comparison-table">${match}</table>`);
+
+    // Headings
+    html = html.replace(/^### (.*$)/gim, '<h5 class="ai-h">${1}</h5>');
+    html = html.replace(/^## (.*$)/gim, '<h4 class="ai-h">${1}</h4>');
+    html = html.replace(/^# (.*$)/gim, '<h3 class="ai-h">${1}</h3>');
+
+    // Bold
+    html = html.replace(/\*\*(.*?)\*\*/gim, '<b>$1</b>');
+
+    // Lists
+    html = html.replace(/^\s*-\s+(.*$)/gim, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\/li>)+/gim, '<ul>$1</ul>');
+
+    // Line breaks
+    html = html.replace(/\n/gim, '<br>');
+
+    return html;
+}
+
+async function renderMentions(filter = '') {
+    const { mentions } = getActionBarElements();
+    if (!mentions) return;
+
+    try {
+        if (!openTabsForMentions.length || filter === '') {
+            if (window.browser?.getOpenTabs) {
+                openTabsForMentions = await window.browser.getOpenTabs();
+            } else {
+                openTabsForMentions = await window.browser?.invoke('get-open-tabs') || [];
+            }
+        }
+    } catch (e) {
+        console.error('Failed to get tabs for mentions:', e);
+        openTabsForMentions = [];
+    }
+
+    const filtered = openTabsForMentions.filter(t =>
+        t.title.toLowerCase().includes(filter.toLowerCase()) ||
+        t.url.toLowerCase().includes(filter.toLowerCase())
+    );
+
+    if (filtered.length === 0) {
+        mentions.classList.add('hidden');
+        return;
+    }
+
+    // Clamp selection
+    if (selectedMentionIndex >= filtered.length) selectedMentionIndex = 0;
+
+    mentions.innerHTML = filtered.map((tab, i) => `
+        <div class="mention-item ${i === selectedMentionIndex ? 'active' : ''}" data-id="${tab.id}">
+            <img src="${tab.favicon || 'icons/globe.svg'}" class="mention-favicon" onerror="this.src='icons/globe.svg'">
+            <div class="mention-info">
+                <div class="mention-title">${tab.title}</div>
+                <div class="mention-url">${tab.url}</div>
+            </div>
+        </div>
+    `).join('');
+
+    mentions.classList.remove('hidden');
+}
+
+async function updateActionBarResults(query, mode = 'ai') {
+    const { results, ghost, status, aiResult, overlay } = getActionBarElements();
     if (!results) return;
 
-    // Show thinking if searching
-    if (query.length > 0) {
+    const isPalette = overlay?.classList.contains('palette-mode');
+
+    // Show thinking if searching in AI mode
+    if (query.length > 0 && !isPalette) {
         if (status) {
             status.textContent = 'Thinking...';
             status.classList.remove('hidden');
         }
+        if (ghost) ghost.classList.add('hidden');
     } else {
-        if (status) status.classList.add('hidden');
+        if (status && !overlay?.classList.contains('ai-loading')) {
+            status.classList.add('hidden');
+        }
+        if (ghost) ghost.classList.toggle('hidden', !!query);
     }
 
     if (aiResult) aiResult.classList.add('hidden');
-    results.classList.remove('hidden');
+
+    // Ensure results are strictly display: none unless in palette-mode or expanded
+    if (isPalette) {
+        results.style.display = 'block';
+    } else {
+        results.style.display = 'none';
+    }
 
     const q = query.toLowerCase().trim();
 
@@ -1403,7 +1504,8 @@ async function updateActionBarResults(query) {
                 }))
             });
         }
-        if (ghost) ghost.textContent = 'Type to search or ask anything...';
+        // FIXED: Clear ghost text when empty to avoid double placeholder with input's own placeholder
+        if (ghost) ghost.textContent = '';
     } else {
         // Filtered View
         const filteredCommands = COMMANDS.filter(c => c.title.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q));
@@ -1456,7 +1558,7 @@ async function updateActionBarResults(query) {
                         } catch (e) { }
 
                         const lastTabs = history.slice(0, 15).map(t => `${t.title} (${t.url})`).join('\n');
-                        const contextPrompt = `You are the Pulsar Browser Assistant. Use the following browsing history as context to answer. 
+                        const contextPrompt = `You are the Pulsar Browser Assistant. Use the following browsing history as context to answer.
 Context (Last 15 visited pages):
 ${lastTabs}
 
@@ -1486,6 +1588,8 @@ User Question: ${userQuery}`;
 
                         // Expand bar and show result
                         if (aiResult) {
+                            const bar = $('action-bar-main');
+                            if (bar) bar.classList.add('expanded');
                             aiResult.innerHTML = `<div class="ai-answer-content">${response.summary}</div>`;
                             aiResult.classList.remove('hidden');
                         }
@@ -1544,44 +1648,230 @@ User Question: ${userQuery}`;
 
 const { input: paletteInput, overlay: paletteOverlay, ghost: paletteGhost } = getActionBarElements();
 
-paletteInput?.addEventListener('input', (e) => {
+paletteInput?.addEventListener('input', async (e) => {
     selectedActionIndex = 0;
-    updateActionBarResults(e.target.value);
+    const value = e.target.value;
+
+    // Detect @ for mentions
+    // Check if the character before the cursor is @ or if we are typing a mention
+    const cursorPos = e.target.selectionStart;
+    const textBeforeCursor = value.substring(0, cursorPos);
+    const lastAt = textBeforeCursor.lastIndexOf('@');
+    const isAtActive = lastAt !== -1 && (lastAt === 0 || textBeforeCursor[lastAt - 1] === ' ');
+
+    if (isAtActive) {
+        const query = textBeforeCursor.substring(lastAt + 1);
+        if (selectedMentionIndex === -1) selectedMentionIndex = 0;
+        await renderMentions(query);
+    } else {
+        const { mentions } = getActionBarElements();
+        if (mentions) mentions.classList.add('hidden');
+        selectedMentionIndex = -1;
+    }
+
+    updateActionBarResults(value);
 });
 
-paletteInput?.addEventListener('keydown', (e) => {
-    const { results } = getActionBarElements();
+paletteInput?.addEventListener('keydown', async (e) => {
+    const { results, overlay, status, aiResult, mentions } = getActionBarElements();
+    const isPalette = overlay?.classList.contains('palette-mode');
     const allItems = results?.allItems || [];
+    const isMentionsVisible = !mentions?.classList.contains('hidden');
 
     if (e.key === 'Escape') {
         toggleActionBar(false);
     } else if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        selectedActionIndex = (selectedActionIndex + 1) % allItems.length;
-        updateActionBarResults(paletteInput.value);
+        if (isMentionsVisible) {
+            e.preventDefault();
+            const filtered = mentions.querySelectorAll('.mention-item');
+            selectedMentionIndex = (selectedMentionIndex + 1) % filtered.length;
+            const value = paletteInput.value;
+            const lastAt = value.lastIndexOf('@');
+            renderMentions(value.substring(lastAt + 1));
+        } else if (isPalette && allItems.length > 0) {
+            e.preventDefault();
+            selectedActionIndex = (selectedActionIndex + 1) % allItems.length;
+            updateActionBarResults(paletteInput.value, 'palette');
+        }
     } else if (e.key === 'ArrowUp') {
+        if (isMentionsVisible) {
+            e.preventDefault();
+            const filtered = mentions.querySelectorAll('.mention-item');
+            selectedMentionIndex = (selectedMentionIndex - 1 + filtered.length) % filtered.length;
+            const value = paletteInput.value;
+            const lastAt = value.lastIndexOf('@');
+            renderMentions(value.substring(lastAt + 1));
+        } else if (isPalette && allItems.length > 0) {
+            e.preventDefault();
+            selectedActionIndex = (selectedActionIndex - 1 + allItems.length) % allItems.length;
+            updateActionBarResults(paletteInput.value, 'palette');
+        }
+    } else if ((e.key === 'Tab' || e.key === 'Enter') && isMentionsVisible) {
         e.preventDefault();
-        selectedActionIndex = (selectedActionIndex - 1 + allItems.length) % allItems.length;
-        updateActionBarResults(paletteInput.value);
+        const active = mentions.querySelector('.mention-item.active');
+        if (active) {
+            const title = active.querySelector('.mention-title').textContent;
+            const tabId = active.getAttribute('data-id');
+            const value = paletteInput.value;
+            const lastAt = value.lastIndexOf('@');
+
+            // Replace the @mention token with the title and store the mapping for extraction
+            const newValue = value.substring(0, lastAt) + `@${title} `;
+            paletteInput.value = newValue;
+
+            // Internal mapping for tab extraction
+            if (!window._mentions) window._mentions = {};
+            window._mentions[`@${title}`] = tabId;
+
+            mentions.classList.add('hidden');
+            selectedMentionIndex = -1;
+        }
     } else if (e.key === 'Enter') {
-        if (selectedActionIndex >= 0 && allItems[selectedActionIndex]) {
+        const query = paletteInput.value.trim();
+        if (!query) return;
+
+        if (isPalette && selectedActionIndex >= 0 && allItems[selectedActionIndex]) {
             allItems[selectedActionIndex].action();
             toggleActionBar(false);
-        } else if (paletteInput.value.trim()) {
-            // Default: ask AI with context if no match
-            const query = paletteInput.value.trim();
-            toggleActionBar(false);
-            window.browser?.storageGet(['footsteps']).then(res => {
-                const history = res.footsteps || [];
-                const lastTabs = history.slice(0, 15).map(t => `${t.title} (${t.url})`).join('\n');
-                const contextPrompt = `Context from user's history:\n${lastTabs}\n\nUser Message: ${query}`;
-                window.browser?.triggerGoSearch(contextPrompt);
-            });
+        } else {
+            // Trigger AI Search Directly
+            console.log('[Renderer] Starting AI Search for query:', query);
+            overlay?.classList.add('ai-loading');
+            paletteInput.readOnly = true;
+
+            if (status) {
+                status.textContent = 'Asking AI...';
+                status.classList.remove('hidden');
+                // Hide input text during loading as requested
+                paletteInput.style.color = 'transparent';
+                paletteInput.style.caretColor = 'transparent';
+            }
+            if (results) results.classList.add('hidden');
+            if (paletteGhost) paletteGhost.classList.add('hidden');
+            if (aiResult) aiResult.classList.add('hidden');
+
+            try {
+                // Get settings for AI provider
+                console.log('[Renderer] Fetching settings...');
+                const settings = await window.browser?.storageGet(['aiProvider', 'openaiKey', 'geminiKey', 'grokKey', 'llamaKey', 'intentsSearchKey']);
+
+                // 1. Resolve Mentions & Extract Data
+                const mentionTokens = query.match(/@[\w\s.-]+/g) || [];
+                let extractedContext = "";
+
+                if (mentionTokens.length > 0 && window._mentions) {
+                    status.textContent = `Extracting data from ${mentionTokens.length} sites...`;
+                    for (const token of mentionTokens) {
+                        const cleanToken = token.trim();
+                        const tabId = window._mentions[cleanToken];
+                        if (tabId) {
+                            try {
+                                const data = await window.browser?.invoke('extract-tab-data', parseInt(tabId));
+                                if (data && !data.error) {
+                                    extractedContext += `\n--- SOURCE: ${cleanToken} ---\n`;
+                                    extractedContext += `Title: ${data.title}\n`;
+                                    extractedContext += `Description: ${data.metaDescription || data.ogDescription || 'N/A'}\n`;
+                                    extractedContext += `Key Heading: ${data.h1}\n`;
+                                    extractedContext += `Content Snippet: ${data.bodySnippet}\n`;
+                                }
+                            } catch (e) { console.warn(`Failed to extract from ${cleanToken}`, e); }
+                        }
+                    }
+                }
+
+                status.textContent = 'Asking AI...';
+
+                // 2. Build final prompt
+                let systemPrompt = "You are a helpful assistant.";
+                let userPrompt = query;
+
+                if (extractedContext) {
+                    systemPrompt = `You are Pulsar Research AI, a specialized agent for comparative web analysis.
+
+GOAL: Provide a high-density, visually structured comparison between the mentioned websites.
+
+FORMATTING REQUIREMENTS:
+1. USE MARKDOWN: Use # for headers, - for bullets, and tables for data.
+2. COMPARISON TABLE: If comparing 2+ items, ALWAYS start with a markdown table of key metrics (e.g., Price, Features, Rating).
+3. PROS & CONS: Use separate sections for "Strengths" and "Weaknesses" for each site.
+4. VERDICT: End with a "Pulsar Recommendation" based on the user's intent.
+5. CLEANLINESS: Avoid "fluff" (no "I found this...", "Here is...", "I hope this helps"). Start immediately with the content.
+
+TONE: Objective, technical, and efficient.`;
+
+                    userPrompt = `User Query: ${query}\n\nEXTRACTED DATA FROM MENTIONED SITES:\n${extractedContext}`;
+                } else {
+                    // Get recent context if no mentions
+                    let history = [];
+                    try {
+                        const stats = await window.browser?.storageGet(['footsteps']);
+                        history = stats.footsteps || [];
+                    } catch (e) { }
+                    const lastTabs = history.slice(0, 5).map(t => `${t.title} (${t.url})`).join('\n');
+                    userPrompt = `Context (History):\n${lastTabs}\n\nQuery: ${query}`;
+                }
+
+                const response = await window.browser?.aiSearch(userPrompt, settings, systemPrompt);
+
+                if (status) {
+                    status.classList.add('hidden');
+                    paletteInput.style.color = '';
+                    paletteInput.style.caretColor = '';
+                }
+                overlay?.classList.remove('ai-loading');
+
+                console.log('[Renderer] AI Response received:', response);
+
+                if (response.error) {
+                    if (aiResult) {
+                        const bar = $('action-bar-main');
+                        if (bar) bar.classList.add('expanded');
+                        aiResult.innerHTML = `<div class="ai-answer-content" style="color: #ff5f6d;">AI Error: ${response.error}</div>`;
+                        aiResult.classList.remove('hidden');
+                    } else {
+                        alert('AI Error: ' + response.error);
+                        toggleActionBar(false);
+                    }
+                    return;
+                }
+
+                if (response.summary && response.summary.startsWith('GOTO:')) {
+                    const url = response.summary.replace('GOTO:', '').trim();
+                    window.browser?.navigate(url);
+                    toggleActionBar(false);
+                    return;
+                }
+
+                if (aiResult) {
+                    const bar = $('action-bar-main');
+                    if (bar) bar.classList.add('expanded');
+                    aiResult.innerHTML = `<div class="ai-answer-content">${renderMarkdown(response.summary)}</div>`;
+                    aiResult.classList.remove('hidden');
+                    console.log('[Renderer] AI Result displayed');
+                }
+            } catch (err) {
+                console.error('[Renderer] Action Bar AI Error:', err);
+                if (status) status.classList.add('hidden');
+                if (paletteInput) {
+                    paletteInput.style.color = '';
+                    paletteInput.style.caretColor = '';
+                    paletteInput.readOnly = false;
+                }
+                overlay?.classList.remove('ai-loading');
+                if (aiResult) {
+                    const bar = $('action-bar-main');
+                    if (bar) bar.classList.add('expanded');
+                    aiResult.innerHTML = `<div class="ai-answer-content" style="color: #ff5f6d;">Execution Error: ${err.message}</div>`;
+                    aiResult.classList.remove('hidden');
+                } else {
+                    toggleActionBar(false);
+                }
+            }
         }
-    } else if (e.key === 'Tab' && paletteGhost?.textContent) {
+    } else if (e.key === 'Tab' && paletteGhost?.textContent && !paletteGhost.classList.contains('hidden')) {
         e.preventDefault();
         paletteInput.value = paletteGhost.textContent;
-        updateActionBarResults(paletteInput.value);
+        updateActionBarResults(paletteInput.value, isPalette ? 'palette' : 'ai');
     }
 });
 
@@ -1626,12 +1916,20 @@ if (window.browser?.onOpenSettings) {
 }
 
 if (window.browser?.onToggleActionBar) {
-    window.browser.onToggleActionBar(() => {
-        console.log('[Renderer] IPC: Received toggle-action-bar');
-        // Prevent sidebar from opening the action bar
+    window.browser.onToggleActionBar((data) => {
+        console.log('[Renderer] IPC: Received toggle-action-bar', data);
         if (isSidebarMode) return;
-        const isActive = actionBarOverlay.classList.contains('active');
-        toggleActionBar(!isActive);
+
+        const overlay = $('action-bar-overlay');
+        const isActive = overlay?.classList.contains('active');
+        const currentMode = overlay?.classList.contains('palette-mode') ? 'palette' : 'ai';
+        const requestedMode = data?.mode || 'ai';
+
+        if (isActive && currentMode === requestedMode) {
+            toggleActionBar(false);
+        } else {
+            toggleActionBar(true, requestedMode);
+        }
     });
 }
 

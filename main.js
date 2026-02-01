@@ -8,6 +8,7 @@ const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
+const { handleAISearch: handleAISearchHelper, GENERIC_SYSTEM_PROMPT: HELPER_SYSTEM_PROMPT } = require('./ai_helper');
 
 console.log('[Main] Starting Pulsar...');
 
@@ -1160,8 +1161,8 @@ function reload() {
 // ============================================
 
 const RESEARCH_SYSTEM_PROMPT = `You are a high-level research assistant.
-1. Provide a comprehensive yet concise synthesis (max 180 words).
-2. Use professional, clear language.
+1. Provide a comprehensive yet concise synthesis (max 250 words).
+2. USE RICH MARKDOWN: Use bolding, headers, and bullet points for readability.
 3. Suggest 3-4 distinct, high-quality resources.
 4. Format response STRICTLY as JSON: {"summary": "...", "links": [{"title": "...", "url": "..."}, ...]}
 5. IF the user is specifically asking for song lyrics, ADD "song_info": {"artist": "Exact Artist", "title": "Exact Title"} to the JSON.`;
@@ -1963,9 +1964,9 @@ ipcMain.on('tab-pin', (event, { tabId, pinned }) => {
 });
 
 // AI Search (invoke = async response)
-ipcMain.handle('ai-search', async (event, { query, settings }) => {
-    console.log('[Main] IPC: ai-search');
-    return await handleAISearch(query, settings);
+ipcMain.handle('ai-search', async (event, { query, settings, systemPrompt }) => {
+    console.log('[Main] IPC: ai-search', query.substring(0, 50) + '...');
+    return await handleAISearch(query, settings, systemPrompt);
 });
 
 ipcMain.handle('get-app-version', () => {
@@ -2134,7 +2135,7 @@ ipcMain.handle('ask-ai', async (event, prompt, settings, context) => {
     // Combine prompt and context if needed
     const fullQuery = context ? `Context: ${context}\n\nTask: ${prompt}` : prompt;
     // Use generic prompt for ask-ai, as it's typically used for specific tasks like vocab/concepts
-    return await handleAISearch(fullQuery, settings, GENERIC_SYSTEM_PROMPT);
+    return await handleAISearchHelper(fullQuery, settings, HELPER_SYSTEM_PROMPT);
 });
 
 // Storage
@@ -2297,6 +2298,45 @@ ipcMain.on('set-action-bar-visible', async (event, visible) => {
             mainWindow.addBrowserView(tab.view);
             updateAllTabBounds();
         }
+    }
+});
+
+ipcMain.handle('get-open-tabs', async () => {
+    // Return sanitized list of open tabs for the @mention feature
+    return tabs.filter(t => !t.isDead).map(t => ({
+        id: t.id,
+        title: t.title,
+        url: t.url,
+        favicon: t.favicon,
+        isIncognito: t.isIncognito
+    }));
+});
+
+ipcMain.handle('extract-tab-data', async (event, tabId) => {
+    try {
+        const tab = tabs.find(t => t.id === tabId);
+        if (!tab || !tab.view) return { error: 'Tab not found' };
+
+        // Focused extraction script to save tokens
+        const script = `
+            (function() {
+                return {
+                    title: document.title,
+                    h1: document.querySelector('h1')?.innerText || '',
+                    metaDescription: document.querySelector('meta[name="description"]')?.content || '',
+                    ogTitle: document.querySelector('meta[property="og:title"]')?.content || '',
+                    ogDescription: document.querySelector('meta[property="og:description"]')?.content || '',
+                    // Extract first 1000 chars of main text if meta is missing
+                    bodySnippet: document.body.innerText.substring(0, 1000).replace(/\\s+/g, ' ').trim()
+                };
+            })()
+        `;
+
+        const data = await tab.view.webContents.executeJavaScript(script);
+        return data;
+    } catch (err) {
+        console.error('[Main] Extraction error:', err.message);
+        return { error: err.message };
     }
 });
 
@@ -2516,14 +2556,6 @@ function setupKeyboardShortcuts() {
                     click: () => {
                         console.log('[Main] Shortcut: Ping Me');
                         sendToActiveTab('showPingBar');
-                    }
-                },
-                {
-                    label: 'Quick AI',
-                    accelerator: 'Alt+Q',
-                    click: () => {
-                        console.log('[Main] Shortcut: Quick AI');
-                        sendToActiveTab('showAIBar');
                     }
                 },
                 {
@@ -2881,10 +2913,16 @@ if (app) {
             autoUpdater.checkForUpdates();
         }, 3000);
 
-        // Register Action Bar shortcut
+        // Register Action Bar shortcut (AI Search)
         globalShortcut.register('Alt+K', () => {
-            console.log('[Main] Shortcut: Alt+K (Action Bar)');
-            sendToRenderer('toggle-action-bar', null, 'main');
+            console.log('[Main] Shortcut: Alt+K (AI Search)');
+            sendToRenderer('toggle-action-bar', { mode: 'ai' }, 'main');
+        });
+
+        // Register Command Palette shortcut
+        globalShortcut.register('Alt+Shift+K', () => {
+            console.log('[Main] Shortcut: Alt+Shift+K (Command Palette)');
+            sendToRenderer('toggle-action-bar', { mode: 'palette' }, 'main');
         });
     });
 

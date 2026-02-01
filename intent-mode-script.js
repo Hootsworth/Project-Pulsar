@@ -205,6 +205,8 @@ if (window.__INTENT_MODE_LOADED__) {
         }
 
         currentExtractedData = extracted; // Save state
+        comparisonItem = null; // Reset comparison on new intent activation
+
 
         if (!extracted || !extracted.content || extracted.content.trim().length < 50) {
             if (!contentOverride) showNotification('Could not extract content from this page.');
@@ -609,6 +611,7 @@ if (window.__INTENT_MODE_LOADED__) {
         const readerHtml = `
         <div class="intent-mode-container" id="intentModeContainer" 
              data-intent="${intent.name.toLowerCase()}"
+             data-isolate="${isIsolate}"
              style="--intent-max-width: ${intent.maxWidth}; 
                     --intent-font-size: ${adjustedFontSize}px; 
                     --intent-line-height: ${intent.lineHeight};
@@ -623,36 +626,33 @@ if (window.__INTENT_MODE_LOADED__) {
             <div class="intent-topbar" id="intentTopbar">
                 <div class="intent-topbar-left">
                     <span class="intent-badge ${isIsolate ? 'intent-badge-isolate' : ''}">
-                        ${isIsolate ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/></svg>' : intent.icon} 
-                        ${isIsolate ? 'Isolate' : intent.name} Mode
+                        ${isIsolate ? 'Isolated' : intent.name}
                     </span>
                     <span class="intent-reading-time">${extracted.readingTime} min read</span>
                 </div>
                 <div class="intent-topbar-right">
-                    <button type="button" class="intent-btn intent-btn-ai" id="intentSummarize" title="AI Summarize (TL;DR)">
-                        <span class="ai-stars"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1-8.313-12.454z"/></svg></span> Summarize
-                    </button>
-                    <button type="button" class="intent-btn intent-btn-icon" id="intentBionic" title="Bionic Reading Mode">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
-                    </button>
-                    <button type="button" class="intent-btn intent-btn-icon" id="intentAudio" title="Read Aloud">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+                    <button type="button" class="intent-btn intent-btn-ai" id="intentSummarize" title="AI Summarize">
+                        Summarize
                     </button>
                     <button type="button" class="intent-btn intent-btn-ai intent-btn-icon" id="intentFocusSpot" title="AI Focus Spotlight">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
                     </button>
-                    <button type="button" class="intent-btn intent-btn-icon" id="intentToggleLinks" title="Disable Links">
+                    <button type="button" class="intent-btn intent-btn-icon" id="intentBionic" title="Focus Mode">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20"/></svg>
+                    </button>
+                    <button type="button" class="intent-btn intent-btn-icon" id="intentAudio" title="Listen">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                    </button>
+                    <button type="button" class="intent-btn intent-btn-icon" id="intentToggleLinks" title="Hide Links">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                     </button>
-                    <button type="button" class="intent-btn intent-btn-icon" id="intentToggleImages" title="Hide Images">
+                    <button type="button" class="intent-btn intent-btn-icon" id="intentToggleImages" title="Hide Pictures">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
                     </button>
-                    <button type="button" class="intent-btn intent-btn-icon" id="intentSettingsToggle" title="Typography Settings">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    <button type="button" class="intent-btn intent-btn-icon" id="intentSettingsToggle" title="Settings">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33 1.65 1.65 0 0 0 1-1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                     </button>
-                    <button type="button" class="intent-btn" id="intentFontDecrease" title="Decrease font size">A−</button>
-                    <button type="button" class="intent-btn" id="intentFontIncrease" title="Increase font size">A+</button>
-                    <button type="button" class="close-btn-mac" id="intentClose" title="${isIsolate ? 'Exit Isolation' : 'Exit Intent Mode (Esc)'}" style="width: 20px; height: 20px;">
+                    <button type="button" class="close-btn-mac" id="intentClose" title="Exit">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                             <path d="M18 6L6 18M6 6l12 12"/>
                         </svg>
@@ -1442,6 +1442,89 @@ if (window.__INTENT_MODE_LOADED__) {
             });
         }
 
+        /**
+         * Perform Agentic Comparison
+         */
+        function performComparison(itemA, itemB) {
+            showNotification('Generating comparison...');
+
+            chrome.runtime.sendMessage({
+                action: 'askAI',
+                prompt: `Compare "${itemA}" vs "${itemB}".
+                Create a structured comparison.
+                Format as valid HTML using these classes:
+                - <div class="intent-compare-grid">
+                - <div class="intent-compare-col"> for each item
+                - <h3>Item Name</h3>
+                - <ul><li>Pros...</li></ul>
+                - <ul><li>Cons...</li></ul>
+                - <div class="intent-compare-verdict">Verdict...</div>
+                
+                Keep it concise and objective.`,
+                context: 'Objective: Help the user decide between these two options.'
+            }, (response) => {
+                if (response?.answer) {
+                    showAgenticResult(`Comparing: ${itemA} vs ${itemB}`, response.answer);
+                } else {
+                    showNotification('Comparison failed. Try again.');
+                }
+            });
+        }
+
+        /**
+         * Perform Agentic Scout (Alternatives)
+         */
+        function performScout(item) {
+            showNotification(`Scouting alternatives for ${item.substring(0, 20)}...`);
+
+            chrome.runtime.sendMessage({
+                action: 'askAI',
+                prompt: `List 3 best alternatives to "${item}".
+                Format as valid HTML:
+                <div class="intent-scout-list">
+                    <div class="intent-scout-item">
+                        <h4>Alternative Name</h4>
+                        <p><strong>Why switch:</strong> ...</p>
+                        <p><strong>Why stay:</strong> ...</p>
+                    </div>
+                </div>`,
+                context: 'Objective: Suggest superior tools or products.'
+            }, (response) => {
+                if (response?.answer) {
+                    showAgenticResult(`Alternatives to ${item}`, response.answer);
+                } else {
+                    showNotification('Scouting failed. Try again.');
+                }
+            });
+        }
+
+        /**
+         * Show Agentic Result Modal
+         */
+        function showAgenticResult(title, htmlContent) {
+            const modal = document.createElement('div');
+            modal.className = 'intent-agent-modal';
+            modal.innerHTML = `
+               <div class="intent-agent-content">
+                   <div class="intent-agent-header">
+                       <h3>${escapeHtml(title)}</h3>
+                       <button class="close-btn-mac" id="agentClose">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                       </button>
+                   </div>
+                   <div class="intent-agent-body">${htmlContent}</div>
+               </div>
+               <div class="intent-agent-backdrop"></div>
+           `;
+
+            document.body.appendChild(modal);
+
+            // Close handlers
+            const close = () => modal.remove();
+            modal.querySelector('#agentClose').addEventListener('click', close);
+            modal.querySelector('.intent-agent-backdrop').addEventListener('click', close);
+        }
+
         function applyConceptSimplifier() {
             if (conceptSimplifierApplied) return;
             conceptSimplifierApplied = true;
@@ -1735,6 +1818,9 @@ if (window.__INTENT_MODE_LOADED__) {
 
         // Removed readerActive check to allow isolation from any page
 
+        // Don't show tooltip if we are just clicking the tooltip itself (prevent flicker)
+        if (e.target.closest('.intent-htt-tooltip')) return;
+
         const selection = window.getSelection();
         const text = selection.toString().trim();
 
@@ -1759,13 +1845,24 @@ if (window.__INTENT_MODE_LOADED__) {
 
         const tooltip = document.createElement('div');
         tooltip.className = 'intent-htt-tooltip';
+
+        const compareLabel = comparisonItem
+            ? `Vs <em>${escapeHtml(comparisonItem.substring(0, 8))}...</em>`
+            : 'Compare';
+
         tooltip.innerHTML = `
-        <button type="button" class="intent-htt-tooltip-btn" id="httTooltipBtn">
-            Save thought
+        <button type="button" class="intent-htt-tooltip-btn" id="httTooltipBtn" title="Save Thought">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+        </button>
+        <button type="button" class="intent-htt-tooltip-btn" id="intentIsolateBtn" title="Isolate Text">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M4 8h16"/><path d="M4 16h16"/><path d="M10 4v16"/></svg>
         </button>
         <div class="intent-htt-tooltip-divider"></div>
-        <button type="button" class="intent-htt-tooltip-btn" id="intentIsolateBtn">
-            Isolate
+        <button type="button" class="intent-htt-tooltip-btn ${comparisonItem ? 'active' : ''}" id="intentCompareBtn" title="Add to Comparison">
+            ${comparisonItem ? compareLabel : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/><path d="M15 15l5 5"/><path d="M4 4l5 5"/></svg>'}
+        </button>
+        <button type="button" class="intent-htt-tooltip-btn" id="intentScoutBtn" title="Scout Alternatives">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
         </button>
     `;
 
@@ -1788,30 +1885,55 @@ if (window.__INTENT_MODE_LOADED__) {
             tooltip.style.top = `${selectionRect.bottom + scrollTop + 8}px`;
         }
 
-        // Store the selection text before any click clears it (module-level)
+        // Store the selection text
         savedSelection = currentSelection;
 
-        // Attach click handlers
-        document.getElementById('httTooltipBtn')?.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-        });
+        // Handler Wrapper
+        const handleBtnClick = (id, handler) => {
+            const btn = document.getElementById(id);
+            if (!btn) return;
+            btn.addEventListener('mousedown', e => {
+                e.preventDefault(); e.stopPropagation();
+            });
+            btn.addEventListener('click', e => {
+                e.preventDefault(); e.stopPropagation();
+                handler(e);
+            });
+        };
 
-        document.getElementById('httTooltipBtn')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+        handleBtnClick('httTooltipBtn', () => {
             savedSelection = currentSelection;
             showHttPanel();
             hideSelectionTooltip();
         });
 
-        document.getElementById('intentIsolateBtn')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (savedSelection) {
-                activateIntentMode('read', savedSelection);
-                hideSelectionTooltip();
+        handleBtnClick('intentIsolateBtn', () => {
+            if (typeof window.__intentModeActivate__ === 'function') {
+                // Format text for isolation
+                const div = document.createElement('div');
+                div.innerHTML = savedSelection.split('\n').map(p => p.trim() ? `<p>${p.trim()}</p>` : '').join('');
+                window.__intentModeActivate__('read', div.innerHTML);
             }
+            hideSelectionTooltip();
+        });
+
+        handleBtnClick('intentCompareBtn', () => {
+            if (comparisonItem) {
+                // Perform comparison
+                performComparison(comparisonItem, currentSelection);
+                comparisonItem = null; // Reset after compare
+                hideSelectionTooltip();
+            } else {
+                // Set first item
+                comparisonItem = currentSelection;
+                // Update UI to show it's selected (simple refresh of tooltip)
+                showSelectionTooltip();
+            }
+        });
+
+        handleBtnClick('intentScoutBtn', () => {
+            performScout(currentSelection);
+            hideSelectionTooltip();
         });
 
         // Animate in

@@ -162,10 +162,6 @@ chrome.commands.onCommand.addListener(async (command) => {
         sendMessageOrInject(tab, { action: 'showPingBar' }, ['thought-popup.css'], ['content.js']);
     }
 
-    if (command === 'quick-ai') {
-        sendMessageOrInject(tab, { action: 'showAIBar' }, ['thought-popup.css'], ['content.js']);
-    }
-
     if (command === 'footsteps') {
         sendMessageOrInject(tab, { action: 'showFootstepsPanel' }, ['thought-popup.css'], ['content.js']);
     }

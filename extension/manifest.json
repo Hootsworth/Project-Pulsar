@@ -50,14 +50,6 @@
       },
       "description": "Ping Me - Set a quick reminder"
     },
-    "quick-ai": {
-      "suggested_key": {
-        "default": "Alt+Q",
-        "windows": "Alt+Q",
-        "mac": "Alt+Q"
-      },
-      "description": "Quick AI: Ask Question"
-    },
     "footsteps": {
       "suggested_key": {
         "default": "Alt+B",

@@ -125,11 +125,8 @@ if (window.__INTENT_MODE_LOADED__) {
     /**
      * Main activation function
      */
-    /**
-     * Main activation function
-     */
     function activateIntentMode(intent, contentOverride = null, resumeScrollTop = null) {
-        if (readerActive) {
+        if (readerActive && !contentOverride) {
             // Update intent if already active (ignoring contentOverride in update for simplicity)
             const oldIntent = currentIntent;
             currentIntent = INTENTS[intent] || INTENTS.read;
@@ -150,6 +147,13 @@ if (window.__INTENT_MODE_LOADED__) {
 
                 return;
             }
+        }
+
+        if (readerActive && contentOverride) {
+            // If content override provided, we need to rebuild the view
+            const oldContainer = document.getElementById('intentModeContainer');
+            if (oldContainer) oldContainer.remove();
+            readerActive = false; // Reset to allow full build
         }
 
         currentIntent = INTENTS[intent] || INTENTS.read;
@@ -211,8 +215,8 @@ if (window.__INTENT_MODE_LOADED__) {
             container.remove();
         }
 
-        // Remove style
-        document.body.classList.remove('intent-mode-active');
+        // Remove style and theme classes
+        document.body.classList.remove('intent-mode-active', 'intent-theme-light', 'intent-theme-sepia', 'intent-theme-dark');
 
         // Restore original content visibility
         restoreOriginalContent();
@@ -220,6 +224,7 @@ if (window.__INTENT_MODE_LOADED__) {
         readerActive = false;
         currentIntent = null;
         fontSizeOffset = 0;
+        bionicEnabled = false; // Reset state
 
         // Remove event listeners
         document.removeEventListener('keydown', handleKeyboard);
@@ -230,13 +235,27 @@ if (window.__INTENT_MODE_LOADED__) {
      * Hide original page content
      */
     function hideOriginalContent() {
-        hiddenElements.clear();
+        // Only hide if we haven't already stored hidden elements
+        if (hiddenElements.size > 0) return;
+
         Array.from(document.body.children).forEach(child => {
-            if (child.id !== 'intentModeContainer' && child.tagName !== 'SCRIPT' && child.tagName !== 'STYLE') {
-                hiddenElements.set(child, child.style.display);
-                child.style.setProperty('display', 'none', 'important');
+            // Don't hide our own containers or essential tags
+            const id = child.id || '';
+            const className = typeof child.className === 'string' ? child.className : '';
+            const isOurComponent = id.includes('intent-') || id.includes('htt-') || id === 'intentModeContainer' || className.includes('intent-');
+
+            if (!isOurComponent && child.tagName !== 'SCRIPT' && child.tagName !== 'STYLE' && child.tagName !== 'LINK') {
+                const currentDisplay = window.getComputedStyle(child).display;
+                if (currentDisplay !== 'none') {
+                    hiddenElements.set(child, child.style.display);
+                    child.style.setProperty('display', 'none', 'important');
+                }
             }
         });
+
+        // Disable scroll on original body
+        document.documentElement.style.overflow = 'hidden';
+        document.body.style.overflow = 'hidden';
     }
 
     /**
@@ -245,14 +264,24 @@ if (window.__INTENT_MODE_LOADED__) {
     function restoreOriginalContent() {
         hiddenElements.forEach((originalDisplay, element) => {
             if (element && element.style) {
+                element.style.removeProperty('display');
                 if (originalDisplay) {
                     element.style.display = originalDisplay;
-                } else {
-                    element.style.removeProperty('display');
                 }
             }
         });
         hiddenElements.clear();
+
+        // Restore scroll
+        document.documentElement.style.overflow = '';
+        document.body.style.overflow = '';
+
+        // Final fallback: ensure no body child is accidentally left hidden
+        Array.from(document.body.children).forEach(child => {
+            if (child.style.getPropertyValue('display') === 'none' && !child.id?.includes('intent-') && !child.id?.includes('htt-')) {
+                child.style.removeProperty('display');
+            }
+        });
     }
 
     /**
@@ -978,6 +1007,8 @@ if (window.__INTENT_MODE_LOADED__) {
 
         // === BIONIC READING MODE ===
         let bionicEnabled = false;
+        let originalArticleContent = null;
+
         document.getElementById('intentBionic')?.addEventListener('click', () => {
             const content = document.getElementById('intentContent');
             const btn = document.getElementById('intentBionic');
@@ -986,15 +1017,24 @@ if (window.__INTENT_MODE_LOADED__) {
             bionicEnabled = !bionicEnabled;
 
             if (bionicEnabled) {
-                // Apply bionic reading
+                // Save original to restore later
+                originalArticleContent = content.innerHTML;
+
+                // Show loading state
+                btn.classList.add('intent-btn-loading');
+
+                // Process in chunks to avoid blocking main thread too long
                 const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, null, false);
                 const textNodes = [];
-                while (walker.nextNode()) textNodes.push(walker.currentNode);
+                let node;
+                while (node = walker.nextNode()) textNodes.push(node);
 
+                // Batch processing
                 textNodes.forEach(node => {
                     if (node.nodeValue.trim().length === 0) return;
                     const parent = node.parentNode;
                     if (parent.classList?.contains('bionic-word')) return;
+                    if (parent.tagName === 'SCRIPT' || parent.tagName === 'STYLE' || parent.tagName === 'CODE' || parent.tagName === 'PRE') return;
 
                     const words = node.nodeValue.split(/(\s+)/);
                     const fragment = document.createDocumentFragment();
@@ -1011,14 +1051,21 @@ if (window.__INTENT_MODE_LOADED__) {
                         }
                     });
 
-                    parent.replaceChild(fragment, node);
+                    try {
+                        parent.replaceChild(fragment, node);
+                    } catch (e) { /* Node might have been moved */ }
                 });
 
+                btn.classList.remove('intent-btn-loading');
                 btn.classList.add('active');
                 btn.style.background = 'rgba(255,255,255,0.15)';
             } else {
-                // Remove bionic (reload content)
-                location.reload();
+                // Remove bionic (restore saved content)
+                if (originalArticleContent) {
+                    content.innerHTML = originalArticleContent;
+                }
+                btn.classList.remove('active');
+                btn.style.background = '';
             }
         });
 
@@ -1169,7 +1216,13 @@ if (window.__INTENT_MODE_LOADED__) {
             if (vocabSimplifierEnabled) {
                 document.getElementById('intentVocabToggle').classList.add('active');
                 applyVocabSimplifier();
-            } else location.reload();
+            } else {
+                document.getElementById('intentVocabToggle').classList.remove('active');
+                // Restore original content to remove highlights
+                if (originalArticleContent) {
+                    document.getElementById('intentContent').innerHTML = originalArticleContent;
+                }
+            }
         });
 
         document.getElementById('intentConceptToggle')?.addEventListener('click', () => {
@@ -1178,7 +1231,13 @@ if (window.__INTENT_MODE_LOADED__) {
             if (conceptSimplifierEnabled) {
                 document.getElementById('intentConceptToggle').classList.add('active');
                 applyConceptSimplifier();
-            } else location.reload();
+            } else {
+                document.getElementById('intentConceptToggle').classList.remove('active');
+                // Restore original content to remove highlights
+                if (originalArticleContent) {
+                    document.getElementById('intentContent').innerHTML = originalArticleContent;
+                }
+            }
         });
 
         document.getElementById('intentGoldenToggle')?.addEventListener('click', () => {
@@ -1206,7 +1265,16 @@ if (window.__INTENT_MODE_LOADED__) {
             `;
             document.getElementById('intentModeContainer')?.appendChild(container);
 
-            window.addEventListener('scroll', updateGoldenThread, { passive: true });
+            let ticking = false;
+            window.addEventListener('scroll', () => {
+                if (!ticking) {
+                    window.requestAnimationFrame(() => {
+                        updateGoldenThread();
+                        ticking = false;
+                    });
+                    ticking = true;
+                }
+            }, { passive: true });
             updateGoldenThread();
         }
 
@@ -1781,44 +1849,74 @@ if (window.__INTENT_MODE_LOADED__) {
 
         panel.innerHTML = `
         <div class="intent-htt-panel-header">
-            <h3>Hold That Thought</h3>
-            <button type="button" class="close-btn-mac" id="httPanelClose" style="width: 24px; height: 24px;">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <div class="intent-htt-brand">
+                <div class="intent-htt-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+                        <path d="M12 8V12L15 15M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z"/>
+                    </svg>
+                </div>
+                <h3>Hold That Thought</h3>
+            </div>
+            <button type="button" class="close-btn-mac" id="httPanelClose">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
                     <path d="M18 6L6 18M6 6l12 12"/>
                 </svg>
             </button>
         </div>
         
         <div class="intent-htt-panel-content">
-            <div class="intent-htt-preview">
-                <p class="intent-htt-selected-text">"${escapeHtml(selectionText.substring(0, 120))}${selectionText.length > 120 ? '...' : ''}"</p>
-            </div>
-            
-            <div class="intent-htt-field">
-                <label>Tag</label>
-                <div class="intent-htt-tags" id="httTags">
-                    <button type="button" class="intent-htt-tag active" data-tag="📝 Note">Note</button>
-                    <button type="button" class="intent-htt-tag" data-tag="💡 Idea">Idea</button>
-                    <button type="button" class="intent-htt-tag" data-tag="📚 Read Later">Read Later</button>
+            <div class="intent-htt-quote-block">
+                <svg class="quote-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M14.017 21L14.017 18C14.017 16.8954 14.9124 16 16.017 16H19.017C19.5693 16 20.017 15.5523 20.017 15V9C20.017 8.44772 19.5693 8 19.017 8H15.017C14.4647 8 14.017 8.44772 14.017 9V12C14.017 12.5523 13.5693 13 13.017 13H11.017C10.4647 13 10.017 12.5523 10.017 12V9C10.017 7.34315 11.3601 6 13.017 6H19.017C20.6739 6 22.017 7.34315 22.017 9V15C22.017 18.3137 19.3307 21 16.017 21H14.017ZM6.017 21L6.017 18C6.017 16.8954 6.91243 16 8.017 16H11.017C11.5693 16 12.017 15.5523 12.017 15V9C12.017 8.44772 11.5693 8 11.017 8H7.017C6.46472 8 6.017 8.44772 6.017 9V12C6.017 12.5523 5.5693 13 5.017 13H3.017C2.46472 13 2.017 12.5523 2.017 12V9C2.017 7.34315 3.36015 6 5.017 6H11.017C12.6739 6 14.017 7.34315 14.017 9V15C14.017 18.3137 11.3307 21 8.017 21H6.017Z"/></svg>
+                <div class="intent-htt-preview">
+                    <p class="intent-htt-selected-text">${escapeHtml(selectionText)}</p>
                 </div>
             </div>
             
             <div class="intent-htt-field">
-                <label>Note</label>
-                <textarea id="httContext" placeholder="Why save this?"></textarea>
+                <label>Organize</label>
+                <div class="intent-htt-tags" id="httTags">
+                    ${HTT_TAGS.map((tag, i) => `
+                        <button type="button" class="intent-htt-tag ${i === 2 ? 'active' : ''}" data-tag="${tag}">
+                            ${tag}
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+            
+            <div class="intent-htt-field">
+                <label>Your Insight</label>
+                <div class="textarea-wrapper">
+                    <textarea id="httContext" placeholder="What's the context for this thought?"></textarea>
+                    <div class="textarea-focus-indicator"></div>
+                </div>
             </div>
         </div>
         
         <div class="intent-htt-panel-footer">
-            <button type="button" class="intent-htt-cancel" id="httCancel">Cancel</button>
-            <button type="button" class="intent-htt-save" id="httSave">Save</button>
+            <button type="button" class="intent-htt-cancel" id="httCancel">Discard</button>
+            <button type="button" class="intent-htt-save" id="httSave">
+                Save Thought
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px; height:14px; margin-left:6px;"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </button>
         </div>
     `;
 
+        // Create backdrop
+        const backdrop = document.createElement('div');
+        backdrop.className = 'intent-htt-backdrop';
+        backdrop.id = 'intentHttBackdrop';
+
+        document.body.appendChild(backdrop);
         document.body.appendChild(panel);
 
         // Animate in
-        requestAnimationFrame(() => panel.classList.add('open'));
+        requestAnimationFrame(() => {
+            backdrop.classList.add('visible');
+            panel.classList.add('open');
+        });
+
+        // Attach event listeners
+        document.getElementById('intentHttBackdrop').addEventListener('click', hideHttPanel);
 
         // Attach event listeners
         document.getElementById('httPanelClose').addEventListener('click', hideHttPanel);
@@ -1854,9 +1952,14 @@ if (window.__INTENT_MODE_LOADED__) {
      */
     function hideHttPanel() {
         const panel = document.getElementById('intentHttPanel');
+        const backdrop = document.getElementById('intentHttBackdrop');
         if (panel) {
             panel.classList.remove('open');
-            setTimeout(() => panel.remove(), 200);
+            setTimeout(() => panel.remove(), 400);
+        }
+        if (backdrop) {
+            backdrop.classList.remove('visible');
+            setTimeout(() => backdrop.remove(), 400);
         }
         currentSelection = '';
     }

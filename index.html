@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="styles.css">
     <!-- Google Fonts for Intents specific font -->
     <link
-        href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=Outfit:wght@100..900&display=swap"
         rel="stylesheet">
 </head>
 
@@ -694,10 +694,12 @@
                         <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                     </svg>
                 </div>
-                <input type="text" id="action-bar-input" placeholder="Type a command or ask anything..."
-                    autocomplete="off">
+                <input type="text" id="action-bar-input" placeholder="Search or ask AI" autocomplete="off">
                 <div id="action-bar-ghost" class="action-bar-ghost"></div>
                 <div id="action-bar-status" class="action-bar-status hidden">Thinking...</div>
+            </div>
+            <div id="action-bar-mentions" class="action-bar-mentions hidden">
+                <!-- Mention chips injected here -->
             </div>
             <div id="action-bar-results" class="action-bar-results">
                 <!-- Suggestions injected here -->
