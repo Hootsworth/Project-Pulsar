@@ -145,25 +145,37 @@ if (window.__INTENT_MODE_LOADED__) {
      */
     function activateIntentMode(intent, contentOverride = null, resumeScrollTop = null) {
         if (readerActive) {
-            // Update intent if already active (ignoring contentOverride in update for simplicity)
-            const oldIntent = currentIntent;
-            currentIntent = INTENTS[intent] || INTENTS.read;
-
-            // Just update CSS variables if container exists
-            const container = document.getElementById('intentModeContainer');
-            if (container) {
-                const baseFontSize = parseInt(currentIntent.fontSize);
-                container.dataset.intent = currentIntent.name.toLowerCase();
-                container.style.setProperty('--intent-max-width', currentIntent.maxWidth);
-                container.style.setProperty('--intent-line-height', currentIntent.lineHeight);
-                container.style.setProperty('--intent-letter-spacing', currentIntent.letterSpacing);
-                container.style.setProperty('--intent-font-size', `${baseFontSize + fontSizeOffset}px`);
-
-                // Update badge
-                const badge = container.querySelector('.intent-badge');
-                if (badge) badge.textContent = `${currentIntent.icon} ${currentIntent.name} Mode`;
-
+            // If already active but we have new content (from Isolate), re-render
+            if (contentOverride) {
+                readerActive = false; // Temporarily reset to force re-render
+                // Fall through to full re-activation
+            } else if (intent === (currentIntent?.name?.toLowerCase() || 'read')) {
+                // TOGGLE OFF: If same intent requested, close it
+                deactivateIntentMode();
                 return;
+            } else {
+                // Just update intent if already active
+                const oldIntent = currentIntent;
+                currentIntent = INTENTS[intent] || INTENTS.read;
+
+                // Just update CSS variables if container exists
+                const container = document.getElementById('intentModeContainer');
+                if (container) {
+                    const baseFontSize = parseInt(currentIntent.fontSize);
+                    container.dataset.intent = currentIntent.name.toLowerCase();
+                    container.style.setProperty('--intent-max-width', currentIntent.maxWidth);
+                    container.style.setProperty('--intent-line-height', currentIntent.lineHeight);
+                    container.style.setProperty('--intent-letter-spacing', currentIntent.letterSpacing);
+                    container.style.setProperty('--intent-font-size', `${baseFontSize + fontSizeOffset}px`);
+
+                    // Update badge
+                    const badge = container.querySelector('.intent-badge');
+                    if (badge) {
+                        badge.innerHTML = `${currentIntent.icon} ${currentIntent.name} Mode`;
+                    }
+
+                    return;
+                }
             }
         }
 
@@ -791,6 +803,9 @@ if (window.__INTENT_MODE_LOADED__) {
     `;
 
         // Inject container
+        const oldContainer = document.getElementById('intentModeContainer');
+        if (oldContainer) oldContainer.remove();
+
         document.body.appendChild(document.createRange().createContextualFragment(readerHtml));
         document.body.classList.add('intent-mode-active');
 

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
+        }
+
+        .dropdown {
+            margin-top: 0;
+            margin-left: auto;
+            margin-right: auto;
+            width: 300px;
+            background: rgba(15, 15, 18, 0.85);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 0 0 12px 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+            display: none;
+            opacity: 0;
+            transform: translateY(-10px);
+            transition: all 0.2s ease;
+        }
+
+        .dropdown.active {
+            display: block;
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .item {
+            padding: 10px 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 13px;
+        }
+
+        .item:hover,
+        .item.selected {
+            background: rgba(255, 255, 255, 0.06);
+            color: #fff;
+        }
+
+        .icon {
+            width: 16px;
+            height: 16px;
+            border-radius: 3px;
+        }
+
+        .details {
+            overflow: hidden;
+        }
+
+        .title {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-weight: 500;
+        }
+
+        .url {
+            font-size: 11px;
+            opacity: 0.5;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="dropdown" class="dropdown"></div>
+    <script>
+        const { ipcRenderer } = require('electron');
+        const dropdown = document.getElementById('dropdown');
+
+        ipcRenderer.on('suggestions-data', (event, data) => {
+            if (!data.matches || data.matches.length === 0) {
+                dropdown.classList.remove('active');
+                return;
+            }
+
+            dropdown.innerHTML = data.matches.map((m, i) => `
+                <div class="item ${i === data.selectedIndex ? 'selected' : ''}" onclick="navigate('${m.url}')">
+                    <img class="icon" src="https://www.google.com/s2/favicons?domain=${m.domain}&sz=32">
+                    <div class="details">
+                        <div class="title">${m.title || m.domain}</div>
+                        <div class="url">${m.url}</div>
+                    </div>
+                </div>
+            `).join('');
+
+            dropdown.classList.add('active');
+        });
+
+        function navigate(url) {
+            ipcRenderer.send('navigate-from-suggestions', url);
+        }
+    </script>
+</body>
+
+</html>

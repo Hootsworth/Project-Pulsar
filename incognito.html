@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Incognito - Pulsar</title>
+    <style>
+        :root {
+            --bg: #09090b;
+            --text: #fafafa;
+            --text-dim: #71717a;
+            --accent: #007aff;
+            --danger: #ef4444;
+            --border: rgba(255, 255, 255, 0.08);
+            --font-sans: 'Inter', -apple-system, sans-serif;
+            --font-mono: 'Space Mono', 'SF Mono', monospace;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: var(--font-sans);
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Ambient Grain Texture */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+            opacity: 0.03;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .void-inner {
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+            padding: 20px;
+            z-index: 2;
+        }
+
+        /* The Centric Logo (Matching Homepage Weight 100) */
+        .logo {
+            font-size: 3.5rem;
+            font-weight: 100;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+            background: linear-gradient(90deg,
+                    #FF5F6D, #FFC371, #FFD700, #4CD964, #5AC8FA, #007AFF, #A259FF);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: moveGradient 10s linear infinite;
+        }
+
+        @keyframes moveGradient {
+            to {
+                background-position: 200% center;
+            }
+        }
+
+        .tagline {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.4em;
+            margin-bottom: 60px;
+            opacity: 0.6;
+        }
+
+        /* Status & Controls */
+        .stealth-monitor {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            margin-bottom: 60px;
+        }
+
+        .monitor-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .monitor-label {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-dim);
+        }
+
+        .monitor-value {
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        /* Tor Switch (Minimal) */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 36px;
+            height: 20px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #1a1a1c;
+            transition: .4s cubic-bezier(0.16, 1, 0.3, 1);
+            border-radius: 20px;
+            border: 1px solid var(--border);
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 2px;
+            bottom: 2px;
+            background-color: #fff;
+            transition: .4s cubic-bezier(0.16, 1, 0.3, 1);
+            border-radius: 50%;
+        }
+
+        input:checked+.slider {
+            background-color: var(--accent);
+            border-color: var(--accent);
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(16px);
+        }
+
+        /* Feature Dots */
+        .bits {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            margin-bottom: 60px;
+        }
+
+        .bit {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .bit-dot {
+            width: 4px;
+            height: 4px;
+            background: var(--text-dim);
+            border-radius: 50%;
+            transition: all 0.3s ease;
+        }
+
+        .bit:hover .bit-dot {
+            background: var(--text);
+            box-shadow: 0 0 10px var(--text);
+            transform: scale(1.5);
+        }
+
+        .bit-label {
+            font-size: 0.6rem;
+            font-family: var(--font-mono);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-dim);
+        }
+
+        /* Panic (Text only style) */
+        .panic-btn {
+            background: none;
+            border: none;
+            color: var(--danger);
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            cursor: pointer;
+            padding-bottom: 2px;
+            border-bottom: 1px solid transparent;
+            transition: all 0.3s ease;
+            opacity: 0.6;
+        }
+
+        .panic-btn:hover {
+            opacity: 1;
+            border-bottom-color: var(--danger);
+            letter-spacing: 0.25em;
+        }
+
+        /* Progress Bar (Invisible until active) */
+        .progress-line {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 0%;
+            height: 2px;
+            background: var(--accent);
+            box-shadow: 0 0 10px var(--accent);
+            z-index: 100;
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="tor-progress-line" class="progress-line"></div>
+
+    <div class="void-inner">
+        <h1 class="logo">PULSAR</h1>
+        <p class="tagline">INCognito session</p>
+
+        <div class="stealth-monitor">
+            <div class="monitor-row">
+                <span class="monitor-label">Privacy Status</span>
+                <span class="monitor-value">High - Deterministic Masking</span>
+            </div>
+            <div class="monitor-row">
+                <span class="monitor-label">Tor Network</span>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span id="tor-status-text" class="monitor-value">Off</span>
+                    <label class="switch">
+                        <input type="checkbox" id="tor-toggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <div class="bits">
+            <div class="bit" title="WebRTC Protection Active">
+                <div class="bit-dot" style="background: var(--accent); box-shadow: 0 0 8px var(--accent);"></div>
+                <span class="bit-label">RCT</span>
+            </div>
+            <div class="bit" title="Hardware Attributes Masked">
+                <div class="bit-dot" style="background: var(--accent); box-shadow: 0 0 8px var(--accent);"></div>
+                <span class="bit-label">HW</span>
+            </div>
+            <div class="bit" title="Canvas & Audio Noise Active">
+                <div class="bit-dot" style="background: var(--accent); box-shadow: 0 0 8px var(--accent);"></div>
+                <span class="bit-label">SIG</span>
+            </div>
+            <div class="bit" title="Headers Sanitized">
+                <div class="bit-dot" style="background: var(--accent); box-shadow: 0 0 8px var(--accent);"></div>
+                <span class="bit-label">NET</span>
+            </div>
+        </div>
+
+        <button class="panic-btn" onclick="panic()">Self-Destruct Session</button>
+    </div>
+
+    <script>
+        const torToggle = document.getElementById('tor-toggle');
+        const torStatusText = document.getElementById('tor-status-text');
+        const torProgressLine = document.getElementById('tor-progress-line');
+
+        torToggle.addEventListener('change', () => {
+            const enabled = torToggle.checked;
+            if (window.browser && window.browser.setTorEnabled) {
+                window.browser.setTorEnabled(enabled);
+            }
+
+            if (enabled) {
+                torStatusText.textContent = 'Connecting...';
+                torProgressLine.style.width = '10%';
+            } else {
+                torStatusText.textContent = 'Off';
+                torProgressLine.style.width = '0%';
+            }
+        });
+
+        if (window.browser) {
+            window.browser.onTorSetupProgress((data) => {
+                const { status, progress } = data;
+                torStatusText.textContent = status + '...';
+                torProgressLine.style.width = progress + '%';
+
+                if (status === 'Bootstrapping' && progress === 100) {
+                    torStatusText.textContent = 'Active (SOCKS5)';
+                    setTimeout(() => { torProgressLine.style.width = '0%'; }, 1000);
+                }
+            });
+
+            window.browser.onTorSetupError((error) => {
+                torStatusText.textContent = 'Error';
+                torProgressLine.style.width = '0%';
+                torToggle.checked = false;
+            });
+        }
+
+        function panic() {
+            if (confirm('Wipe current session and close all tabs?')) {
+                if (window.browser && window.browser.panicIncognito) {
+                    window.browser.panicIncognito();
+                }
+            }
+        }
+    </script>
+</body>
+
+</html>

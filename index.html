@@ -13,12 +13,15 @@
 </head>
 
 <body>
+    <div id="wallpaper" class="wallpaper"></div>
     <!-- Top Strip: Window Controls + Tabs -->
     <div class="app-container">
         <!-- Floating Window Controls (Top Right) -->
         <div class="top-bar">
             <div class="top-bar-left">
-                <div class="app-logo">P</div>
+                <div class="logo-dropdown-container">
+                    <button class="app-logo-btn" id="logo-dropdown-toggle" title="Pulsar Menu">P</button>
+                </div>
                 <div class="nav-controls">
                     <button class="nav-btn" id="btn-back-top" title="Back">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"
@@ -50,10 +53,32 @@
                             <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
                         </svg>
                     </button>
+                    <!-- Sidebar Toggle Button -->
+                    <button class="nav-btn" id="btn-autohide-top" title="Toggle Sidebar (Auto-hide)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="9" y1="3" x2="9" y2="21"></line>
+                        </svg>
+                    </button>
                 </div>
             </div>
             <div class="drag-handle"></div>
+            <div class="top-bar-center">
+                <div class="url-bar-top-container">
+                    <input type="text" id="url-bar-top" class="url-bar-top" placeholder="Search or type URL"
+                        autocomplete="off">
+                    <div id="url-dropdown" class="url-dropdown hidden"></div>
+                </div>
+            </div>
             <div class="top-bar-right">
+
+                <button class="top-bar-settings-btn" id="btn-action-bar-top" title="Command Palette (Alt+K)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                </button>
 
                 <button class="top-bar-settings-btn" id="btn-split-top" title="Toggle Split View">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -141,13 +166,6 @@
                             <path d="M10 12h4"></path>
                         </svg>
                     </button>
-                    <button class="footer-btn" id="btn-autohide" title="Toggle Auto-hide">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2">
-                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                            <line x1="9" y1="3" x2="9" y2="21"></line>
-                        </svg>
-                    </button>
                 </div>
             </div>
 
@@ -155,7 +173,12 @@
             <div id="archives-container" class="archives-container hidden">
                 <div class="archives-header">
                     <div class="archives-title">ARCHIVE</div>
-                    <button class="close-red-dot" id="btn-close-archive" title="Close Archive"></button>
+                    <button class="close-btn-mac" id="btn-close-archive" title="Close Archive">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round">
+                            <path d="M18 6L6 18M6 6l12 12" />
+                        </svg>
+                    </button>
                 </div>
                 <div id="archives-list" class="archives-list">
                     <!-- History entries injected here -->
@@ -164,11 +187,17 @@
         </div>
     </div>
 
+    <!-- Blur Backdrop (Snapshot of page) -->
+    <div id="blur-backdrop" class="blur-backdrop"></div>
+
     <!-- Main Viewport (BrowserView will be attached here) -->
     <div id="main-viewport" class="main-viewport">
         <div id="loading-bar"></div>
     </div>
-    </div>
+
+    <!-- Split Resizer (vertical handle) -->
+    <div id="split-resizer" class="split-resizer hidden"></div>
+
     <!-- Content view is handled by Electron Main process -->
 
     <!-- Duplicate go-search-overlay removed from here to consolidate at bottom -->
@@ -181,7 +210,11 @@
                     <h2 id="lyricsSongTitle">Song Title</h2>
                     <span id="lyricsArtistName">Artist Name</span>
                 </div>
-                <button id="close-lyrics" class="close-red-dot" title="Close Lyrics"></button>
+                <button id="close-lyrics" class="close-btn-mac" title="Close Lyrics">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                </button>
             </div>
             <div class="lyrics-body">
                 <div id="lyricsContainer" class="lyrics-container"></div>
@@ -202,175 +235,418 @@
 
     <!-- Settings Modal (Ported from Home Page) -->
     <div id="settings-overlay" class="intents-search-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Settings</h2>
-                <button class="close-btn-mac" id="settings-close" title="Close Settings">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                        <path d="M18 6L6 18M6 6l12 12" />
-                    </svg>
-                </button>
-            </div>
-
-            <div class="modal-body">
-                <div class="setting-group">
-                    <label class="setting-label">Color Mode</label>
-                    <div class="theme-options">
-                        <button class="theme-btn active" data-theme="dark">Dark</button>
-                        <button class="theme-btn" data-theme="light">Light</button>
+        <div class="modal-content settings-modal-wide">
+            <div class="settings-layout">
+                <!-- Sidebar Tabs -->
+                <aside class="settings-sidebar">
+                    <div class="settings-sidebar-header">
+                        <div class="sidebar-logo-small">P</div>
+                        <span>Settings</span>
                     </div>
-                </div>
-
-                <!-- Display Settings Section -->
-                <div class="settings-section">
-                    <h3 class="settings-section-title">Display</h3>
-                    <div class="setting-group">
-                        <div class="setting-row">
-                            <div class="setting-info">
-                                <label class="setting-label">Show Quick Links</label>
-                                <span class="setting-desc">Display shortcut links below search</span>
+                    <nav class="settings-nav">
+                        <button class="settings-tab-btn active" data-tab="general">
+                            <div class="tab-icon-box" style="background: #007aff;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2.5">
+                                    <circle cx="12" cy="12" r="3"></circle>
+                                    <path
+                                        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
+                                    </path>
+                                </svg>
                             </div>
-                            <label class="toggle">
-                                <input type="checkbox" id="showQuickLinks" checked>
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                    </div>
-                    <div class="setting-group">
-                        <div class="setting-row">
-                            <div class="setting-info">
-                                <label class="setting-label">Show Time Watermark</label>
-                                <span class="setting-desc">Subtle time display in background</span>
+                            <span>General</span>
+                        </button>
+                        <button class="settings-tab-btn" data-tab="appearance">
+                            <div class="tab-icon-box" style="background: #ff9500;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2.5">
+                                    <circle cx="13.5" cy="6.5" r=".5"></circle>
+                                    <circle cx="17.5" cy="10.5" r=".5"></circle>
+                                    <circle cx="8.5" cy="7.5" r=".5"></circle>
+                                    <circle cx="6.5" cy="12.5" r=".5"></circle>
+                                    <path
+                                        d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.92 0 1.5-.7 1.5-1.5 0-.4-.15-.74-.41-1.01-.26-.25-.42-.61-.42-1.01 0-.85.73-1.52 1.57-1.47 2.66.16 4.97-1.84 5.23-4.49.33-3.41-2.28-6.47-5.72-6.52A5 5 0 0 0 12 2z">
+                                    </path>
+                                </svg>
                             </div>
-                            <label class="toggle">
-                                <input type="checkbox" id="showTimeWatermark">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Behavior Settings Section -->
-                <div class="settings-section">
-                    <h3 class="settings-section-title">Behavior</h3>
-                    <div class="setting-group">
-                        <div class="setting-row">
-                            <div class="setting-info">
-                                <label class="setting-label">Open Results in New Tab</label>
-                                <span class="setting-desc">Search results open in new tab</span>
+                            <span>Appearance</span>
+                        </button>
+                        <button class="settings-tab-btn" data-tab="ai">
+                            <div class="tab-icon-box" style="background: #34c759;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2.5">
+                                    <path
+                                        d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83">
+                                    </path>
+                                    <circle cx="12" cy="12" r="4"></circle>
+                                </svg>
                             </div>
-                            <label class="toggle">
-                                <input type="checkbox" id="newTabResults">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Accessibility & Preferences Section -->
-                <div class="settings-section">
-                    <h3 class="settings-section-title">Preferences</h3>
-                    <div class="setting-group">
-                        <label class="setting-label">Accent Color</label>
-                        <div class="accent-options" id="accentOptions">
-                            <button class="accent-btn active" data-accent="default" title="Default Blue"
-                                style="--accent-color: #007aff;"></button>
-                            <button class="accent-btn" data-accent="ocean" title="Ocean"
-                                style="--accent-color: #0ea5e9;"></button>
-                            <button class="accent-btn" data-accent="forest" title="Forest"
-                                style="--accent-color: #22c55e;"></button>
-                            <button class="accent-btn" data-accent="sunset" title="Sunset"
-                                style="--accent-color: #f97316;"></button>
-                            <button class="accent-btn" data-accent="midnight" title="Midnight"
-                                style="--accent-color: #8b5cf6;"></button>
-                            <button class="accent-btn" data-accent="lavender" title="Lavender"
-                                style="--accent-color: #ec4899;"></button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- AI Configuration Section -->
-                <div class="settings-section">
-                    <h3 class="settings-section-title">AI Configuration</h3>
-
-                    <div class="setting-group">
-                        <label class="setting-label">AI Model Provider</label>
-                        <select id="aiProviderSelect" class="setting-input" style="padding: 8px;">
-                            <option value="openai">OpenAI (GPT-4o)</option>
-                            <option value="gemini">Google Gemini (Gemini 2.5 Flash)</option>
-                            <option value="grok">xAI Grok (Grok 4.1)</option>
-                            <option value="llama">Meta Llama (Llama 4 Maverick)</option>
-                        </select>
-                    </div>
-
-                    <!-- OpenAI Key Input -->
-                    <div class="setting-group ai-key-group" id="keyGroup_openai">
-                        <label class="setting-label">OpenAI API Key</label>
-                        <div class="bg-search-box">
-                            <input type="password" id="openaiKeyInput" class="setting-input" placeholder="sk-...">
-                            <button class="bg-search-btn save-key-btn" data-provider="openai">Save</button>
-                        </div>
-                    </div>
-
-                    <!-- Gemini Key Input -->
-                    <div class="setting-group ai-key-group hidden" id="keyGroup_gemini">
-                        <label class="setting-label">Gemini API Key</label>
-                        <div class="bg-search-box">
-                            <input type="password" id="geminiKeyInput" class="setting-input" placeholder="AIzaSy...">
-                            <button class="bg-search-btn save-key-btn" data-provider="gemini">Save</button>
-                        </div>
-                    </div>
-
-                    <!-- Grok Key Input -->
-                    <div class="setting-group ai-key-group hidden" id="keyGroup_grok">
-                        <label class="setting-label">Grok API Key</label>
-                        <div class="bg-search-box">
-                            <input type="password" id="grokKeyInput" class="setting-input" placeholder="xai-...">
-                            <button class="bg-search-btn save-key-btn" data-provider="grok">Save</button>
-                        </div>
-                    </div>
-
-                    <!-- Llama/Groq Key Input -->
-                    <div class="setting-group ai-key-group hidden" id="keyGroup_llama">
-                        <label class="setting-label">Llama (Groq) API Key</label>
-                        <div class="bg-search-box">
-                            <input type="password" id="llamaKeyInput" class="setting-input" placeholder="gsk_...">
-                            <button class="bg-search-btn save-key-btn" data-provider="llama">Save</button>
-                        </div>
-                    </div>
-
-                    <span class="setting-desc"
-                        style="display: block; margin-top: 12px; font-size: 0.75rem; opacity: 0.7;">
-                        Selected provider powers "Go Search" and AI Assistants.
-                    </span>
-                </div>
-
-                <!-- Updates Section -->
-                <div class="settings-section">
-                    <h3 class="settings-section-title">Updates</h3>
-                    <div class="setting-group">
-                        <div class="update-info-row">
-                            <div class="setting-info">
-                                <label class="setting-label">Version</label>
-                                <span class="setting-desc" id="current-version">Checking...</span>
+                            <span>AI & Models</span>
+                        </button>
+                        <button class="settings-tab-btn" data-tab="privacy">
+                            <div class="tab-icon-box" style="background: #ff9500;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2.5">
+                                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                                </svg>
                             </div>
-                            <button class="accent-button small" id="btn-check-updates">Check for Updates</button>
-                        </div>
+                            <span>Privacy & Speed</span>
+                        </button>
+                        <button class="settings-tab-btn" data-tab="account">
+                            <div class="tab-icon-box" style="background: #00c7be;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2.5">
+                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                    <circle cx="12" cy="7" r="4"></circle>
+                                </svg>
+                            </div>
+                            <span>Account</span>
+                        </button>
+                        <button class="settings-tab-btn" data-tab="updates">
+                            <div class="tab-icon-box" style="background: #5856d6;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2.5">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="7 10 12 15 17 10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                            </div>
+                            <span>Updates</span>
+                        </button>
+                    </nav>
+                </aside>
 
-                        <div id="update-status-container" class="update-status-container hidden">
-                            <div class="update-status-text" id="update-status-text">Checking for updates...</div>
-                            <div class="update-progress-bar-container hidden" id="update-progress-container">
-                                <div class="update-progress-bar" id="update-progress-bar" style="width: 0%"></div>
+                <!-- Main Content Area -->
+                <main class="settings-main">
+                    <header class="settings-main-header">
+                        <h2 id="settings-title">General</h2>
+                        <button class="close-btn-mac" id="settings-close" title="Close Settings">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round">
+                                <path d="M18 6L6 18M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </header>
+
+                    <div class="settings-panes">
+                        <!-- Pane: General -->
+                        <section class="settings-pane active" id="pane-general">
+                            <div class="pane-group">
+                                <h3>Behavior</h3>
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label class="setting-label">Open Results in New Tab</label>
+                                        <span class="setting-desc">Search results from the address bar will open in a
+                                            new tab.</span>
+                                    </div>
+                                    <label class="toggle">
+                                        <input type="checkbox" id="newTabResults">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
                             </div>
-                            <div class="update-actions">
-                                <button class="accent-button small hidden" id="btn-download-update">Download
-                                    Now</button>
-                                <button class="accent-button small hidden" id="btn-install-update">Restart &
-                                    Install</button>
+
+                            <div class="pane-group">
+                                <h3>Startup</h3>
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label class="setting-label">Lazy Load Pinned Tabs</label>
+                                        <span class="setting-desc">Don't load pinned tabs until clicked (Faster
+                                            startup).</span>
+                                    </div>
+                                    <label class="toggle">
+                                        <input type="checkbox" checked disabled>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
                             </div>
-                        </div>
+                        </section>
+
+                        <!-- Pane: Account -->
+                        <section class="settings-pane" id="pane-account">
+                            <div class="pane-group">
+                                <h3>Google Account</h3>
+                                <div
+                                    style="padding: 40px 20px; text-align: center; background: rgba(255, 255, 255, 0.02); border-radius: 16px; border: 1px dashed rgba(255, 255, 255, 0.1);">
+                                    <div style="font-size: 2rem; margin-bottom: 15px; opacity: 0.5;">🔒</div>
+                                    <h4 style="font-size: 1.2rem; color: #fff; margin-bottom: 8px;">Coming Soon</h4>
+                                    <p class="setting-desc" style="max-width: 300px; margin: 0 auto;">We're building a
+                                        secure, external login system to sync your data across devices. Stay tuned!</p>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- Pane: Appearance -->
+                        <section class="settings-pane" id="pane-appearance">
+                            <div class="pane-group">
+                                <h3>Theme</h3>
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label class="setting-label">Color Mode</label>
+                                        <span class="setting-desc">Switch between light and dark backgrounds.</span>
+                                    </div>
+                                    <div class="theme-options">
+                                        <button class="theme-btn active" data-theme="dark">Dark</button>
+                                        <button class="theme-btn" data-theme="light">Light</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="pane-group">
+                                <h3>Interface</h3>
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label class="setting-label">Accent Color</label>
+                                        <span class="setting-desc">The primary highlight color for buttons and
+                                            tabs.</span>
+                                    </div>
+                                    <div class="accent-options" id="accentOptions">
+                                        <button class="accent-btn active" data-accent="default" title="Default Blue"
+                                            style="--accent-color: #007aff;"></button>
+                                        <button class="accent-btn" data-accent="ocean" title="Ocean"
+                                            style="--accent-color: #0ea5e9;"></button>
+                                        <button class="accent-btn" data-accent="forest" title="Forest"
+                                            style="--accent-color: #22c55e;"></button>
+                                        <button class="accent-btn" data-accent="sunset" title="Sunset"
+                                            style="--accent-color: #f97316;"></button>
+                                        <button class="accent-btn" data-accent="midnight" title="Midnight"
+                                            style="--accent-color: #8b5cf6;"></button>
+                                        <button class="accent-btn" data-accent="lavender" title="Lavender"
+                                            style="--accent-color: #ec4899;"></button>
+                                    </div>
+                                </div>
+
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label class="setting-label">Show Quick Links</label>
+                                        <span class="setting-desc">Display shortcut links below search on Home
+                                            tab.</span>
+                                    </div>
+                                    <label class="toggle">
+                                        <input type="checkbox" id="showQuickLinks" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label class="setting-label">Show Time Watermark</label>
+                                        <span class="setting-desc">Floating clock display in Home tab background.</span>
+                                    </div>
+                                    <label class="toggle">
+                                        <input type="checkbox" id="showTimeWatermark">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="pane-group">
+                                <h3>Wallpaper</h3>
+                                <div class="bg-options" id="bgOptions">
+                                    <button class="bg-btn active" data-bg="none" title="Default">
+                                        <div class="bg-preview none"></div>
+                                    </button>
+                                    <button class="bg-btn" data-bg="photo-1506905925346-21bda4d32df4"
+                                        title="Misty Mountains">
+                                        <img src="https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=150&q=60"
+                                            alt="">
+                                    </button>
+                                    <button class="bg-btn" data-bg="photo-1518837695005-2083093ee35b"
+                                        title="Calm Ocean">
+                                        <img src="https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=150&q=60"
+                                            alt="">
+                                    </button>
+                                    <button class="bg-btn" data-bg="minimal-gradient" title="Minimal Gradient">
+                                        <div class="bg-preview gradient-preview"></div>
+                                    </button>
+                                    <button class="bg-btn" data-bg="minimal-mesh" title="Subtle Mesh">
+                                        <div class="bg-preview mesh-preview"></div>
+                                    </button>
+                                </div>
+
+                                <div class="setting-row" style="margin-top: 15px;">
+                                    <div class="setting-info">
+                                        <label class="setting-label">Force Dark Mode</label>
+                                        <span class="setting-desc">Automatically use dark theme when wallpaper is
+                                            active.</span>
+                                    </div>
+                                    <label class="toggle">
+                                        <input type="checkbox" id="forceDarkMode" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- Pane: Privacy & Performance -->
+                        <section class="settings-pane" id="pane-privacy">
+                            <div class="pane-group">
+                                <h3>Privacy Mastery</h3>
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label class="setting-label">Tracker Disclosure</label>
+                                        <span class="setting-desc">Reveal hidden trackers on cookie consent
+                                            banners.</span>
+                                    </div>
+                                    <label class="toggle">
+                                        <input type="checkbox" id="privacyDisclosureEnabled">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label class="setting-label">Incognito Search</label>
+                                        <span class="setting-desc">Preferred search engine for private sessions.</span>
+                                    </div>
+                                    <select id="incognitoSearchSelect" class="setting-input small"
+                                        style="width: 140px;">
+                                        <option value="duckduckgo">DuckDuckGo</option>
+                                        <option value="google">Google</option>
+                                    </select>
+                                </div>
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label class="setting-label">Ghost Mode</label>
+                                        <span class="setting-desc">Randomize fingerprints and strip tracking parameters
+                                            from URLs.</span>
+                                    </div>
+                                    <label class="toggle">
+                                        <input type="checkbox" id="ghostMode">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="pane-group">
+                                <h3>Memory Optimization</h3>
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label class="setting-label">Intelligent Hibernation</label>
+                                        <span class="setting-desc">Automatically suspend inactive tabs to save system
+                                            memory.</span>
+                                    </div>
+                                    <label class="toggle">
+                                        <input type="checkbox" id="tabHibernation">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="pane-group">
+                                <h3>Performance Turbo</h3>
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label class="setting-label">Performance Turbo</label>
+                                        <span class="setting-desc">Block non-essential scripts and media trackers for
+                                            maximum speed.</span>
+                                    </div>
+                                    <label class="toggle">
+                                        <input type="checkbox" id="performanceTurbo">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- Pane: AI -->
+                        <section class="settings-pane" id="pane-ai">
+                            <div class="pane-group">
+                                <h3>Configuration</h3>
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label class="setting-label">Model Provider</label>
+                                        <span class="setting-desc">Powers "Go Search" and AI Insights.</span>
+                                    </div>
+                                    <select id="aiProviderSelect" class="setting-input">
+                                        <option value="openai">OpenAI (GPT-4o)</option>
+                                        <option value="gemini">Google Gemini (Gemini 2.5 Flash)</option>
+                                        <option value="grok">xAI Grok (Grok 4.1)</option>
+                                        <option value="llama">Meta Llama (Llama 4 Maverick)</option>
+                                    </select>
+                                </div>
+
+                                <!-- Key Inputs (Dynamic) -->
+                                <div class="ai-keys-container">
+                                    <div class="setting-group ai-key-group" id="keyGroup_openai">
+                                        <label class="setting-label">OpenAI API Key</label>
+                                        <div class="bg-search-box">
+                                            <input type="password" id="openaiKeyInput" class="setting-input"
+                                                placeholder="sk-...">
+                                            <button class="bg-search-btn save-key-btn"
+                                                data-provider="openai">Save</button>
+                                        </div>
+                                    </div>
+                                    <div class="setting-group ai-key-group hidden" id="keyGroup_gemini">
+                                        <label class="setting-label">Gemini API Key</label>
+                                        <div class="bg-search-box">
+                                            <input type="password" id="geminiKeyInput" class="setting-input"
+                                                placeholder="AIzaSy...">
+                                            <button class="bg-search-btn save-key-btn"
+                                                data-provider="gemini">Save</button>
+                                        </div>
+                                    </div>
+                                    <div class="setting-group ai-key-group hidden" id="keyGroup_grok">
+                                        <label class="setting-label">Grok API Key</label>
+                                        <div class="bg-search-box">
+                                            <input type="password" id="grokKeyInput" class="setting-input"
+                                                placeholder="xai-...">
+                                            <button class="bg-search-btn save-key-btn"
+                                                data-provider="grok">Save</button>
+                                        </div>
+                                    </div>
+                                    <div class="setting-group ai-key-group hidden" id="keyGroup_llama">
+                                        <label class="setting-label">Llama (Groq) API Key</label>
+                                        <div class="bg-search-box">
+                                            <input type="password" id="llamaKeyInput" class="setting-input"
+                                                placeholder="gsk_...">
+                                            <button class="bg-search-btn save-key-btn"
+                                                data-provider="llama">Save</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- Pane: Updates -->
+                        <section class="settings-pane" id="pane-updates">
+                            <div class="pane-group">
+                                <h3>Software Update</h3>
+                                <div class="update-card glass-panel">
+                                    <div class="update-icon-large">
+                                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="1.5">
+                                            <path
+                                                d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83">
+                                            </path>
+                                        </svg>
+                                    </div>
+                                    <div class="update-details">
+                                        <h4>Pulsar Browser</h4>
+                                        <span id="current-version">v5.5.0</span>
+                                        <button class="accent-button small" id="btn-check-updates"
+                                            style="margin-top: 12px;">Check for Updates</button>
+                                    </div>
+                                </div>
+
+                                <div id="update-status-container" class="update-status-container hidden"
+                                    style="margin-top: 20px;">
+                                    <div class="update-status-text" id="update-status-text">Checking for updates...
+                                    </div>
+                                    <div class="update-progress-bar-container hidden" id="update-progress-container">
+                                        <div class="update-progress-bar" id="update-progress-bar" style="width: 0%">
+                                        </div>
+                                    </div>
+                                    <div class="update-actions">
+                                        <button class="accent-button small hidden" id="btn-download-update">Download
+                                            Now</button>
+                                        <button class="accent-button small hidden" id="btn-install-update">Restart &
+                                            Install</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
                     </div>
-                </div>
+                </main>
             </div>
         </div>
     </div>
@@ -380,7 +656,11 @@
         <div class="modal-content split-picker-container">
             <div class="modal-header">
                 <h2>Split View</h2>
-                <button class="close-red-dot" id="split-picker-close" title="Close"></button>
+                <button class="close-btn-mac" id="split-picker-close" title="Close">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                </button>
             </div>
             <div class="modal-body">
                 <div class="split-picker-search-container">
@@ -403,6 +683,42 @@
         </div>
     </div>
 
+    <!-- Contextual Action Bar -->
+    <div id="action-bar-overlay" class="action-bar-overlay">
+        <div class="action-bar-container" id="action-bar-main">
+            <div class="action-bar-border"></div>
+            <div class="action-bar-input-wrapper">
+                <div class="action-bar-hint-icon" id="action-bar-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                </div>
+                <input type="text" id="action-bar-input" placeholder="Type a command or ask anything..."
+                    autocomplete="off">
+                <div id="action-bar-ghost" class="action-bar-ghost"></div>
+                <div id="action-bar-status" class="action-bar-status hidden">Thinking...</div>
+            </div>
+            <div id="action-bar-results" class="action-bar-results">
+                <!-- Suggestions injected here -->
+            </div>
+            <div id="action-bar-ai-result" class="action-bar-ai-result hidden">
+                <!-- AI Answer injected here -->
+            </div>
+            <div class="action-bar-footer">
+                <div class="footer-hint">
+                    <span class="kbd-hint">↑↓</span> to navigate
+                </div>
+                <div class="footer-hint">
+                    <span class="kbd-hint">enter</span> to select
+                </div>
+                <div class="footer-hint">
+                    <span class="kbd-hint">esc</span> to close
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Go Search AI Overlay -->
     <div id="go-search-overlay" class="go-overlay">
         <div id="go-search-container" class="go-container">
@@ -410,7 +726,11 @@
                 <div class="go-badge">
                     <span class="intents-ai-label" style="background: var(--accent-primary);">INTENTS AI</span>
                 </div>
-                <button class="close-red-dot" id="go-search-close" title="Close"></button>
+                <button class="close-btn-mac" id="go-search-close" title="Close">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                </button>
             </div>
             <div id="go-search-body" class="go-body">
                 <!-- Content injected by JS -->

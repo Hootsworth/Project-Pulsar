@@ -1535,5 +1535,128 @@
     }
 
     initSemanticSnippet();
+    initTrackerDisclosure();
+
+    // ============================================
+    // TRACKER DISCLOSURE
+    // ============================================
+
+    function initTrackerDisclosure() {
+        // Wait for potential banners
+        setTimeout(() => {
+            // Check if feature is enabled via backend stats (if 0 or null, maybe disabled or no trackers)
+            // Actually, we should check settings first, but we don't have direct access here easily without IPC.
+            // We'll just ask for stats. If Main process sees disabled setting, it returns 0 or null?
+            // Wait, we defined get-tracker-stats to return objects.
+            // We'll assume if it returns valid object, we proceed.
+
+            chrome.runtime.sendMessage({ action: 'getTrackerStats' }, (stats) => {
+                if (stats && stats.total > 0) {
+                    const banner = detectBanner();
+                    if (banner) {
+                        injectDisclosureWidget(banner, stats);
+                    }
+                }
+            });
+        }, 1500);
+    }
+
+    function detectBanner() {
+        // Heuristics for Consent Banners
+        const candidates = [];
+
+        // 1. Common IDs/Classes
+        const selectors = [
+            '#onetrust-banner-sdk', '#qc-cmp2-container', '#gdpr-banner',
+            '.fc-consent-root', '#cookie-banner', '.cookie-banner',
+            '[aria-label*="cookie" i]', '[aria-label*="consent" i]'
+        ];
+
+        selectors.forEach(sel => {
+            const el = document.querySelector(sel);
+            if (el && isVisible(el)) candidates.push(el);
+        });
+
+        // 2. Text Content Heuristic (Bottom/Top fixed elements with "cookie" or "consent")
+        if (candidates.length === 0) {
+            const divs = document.querySelectorAll('div, section, aside');
+            for (const div of divs) {
+                const style = window.getComputedStyle(div);
+                if ((style.position === 'fixed' || style.position === 'sticky') && (style.bottom === '0px' || style.top === '0px')) {
+                    if (div.innerText.toLowerCase().includes('cookie') || div.innerText.toLowerCase().includes('consent')) {
+                        if (isVisible(div) && div.offsetHeight < 300) { // Banner probably isn't huge
+                            candidates.push(div);
+                        }
+                    }
+                }
+            }
+        }
+
+        return candidates[0]; // Return best guess
+    }
+
+    function isVisible(el) {
+        return el.offsetWidth > 0 && el.offsetHeight > 0;
+    }
+
+    function injectDisclosureWidget(banner, stats) {
+        if (document.getElementById('pulsar-tracker-disclosure')) return;
+
+        const widget = document.createElement('div');
+        widget.id = 'pulsar-tracker-disclosure';
+        widget.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                <span style="font-size: 14px;">🛡️</span>
+                <span style="font-weight: 600; font-family: system-ui; font-size: 13px;">Pulsar Privacy</span>
+            </div>
+            <div style="font-size: 12px; opacity: 0.9; margin-bottom: 6px;">
+                ${stats.total} trackers detected before consent:
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 11px; opacity: 0.8;">
+                <div>Ads: ${stats.advertising}</div>
+                <div>Analytics: ${stats.analytics}</div>
+                <div>Social: ${stats.social}</div>
+                <div>Other: ${stats.other}</div>
+            </div>
+        `;
+
+        // Styling
+        widget.style.cssText = `
+            position: absolute;
+            top: -110px;
+            left: 20px;
+            background: #1e1e1e; /* Dark theme default */
+            color: #fff;
+            padding: 12px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
+            z-index: 2147483647; /* Max Z-Index */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            width: 200px;
+            pointer-events: none; /* Let clicks pass through if needed, or maybe auto-dismiss? */
+            animation: slideUp 0.4s ease-out;
+        `;
+
+        // Animation
+        const style = document.createElement('style');
+        style.textContent = `@keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }`;
+        document.head.appendChild(style);
+
+        // Position relative to banner
+        // If banner is fixed bottom, place above it.
+        // If banner is fixed top, place below it.
+        const rect = banner.getBoundingClientRect();
+        if (rect.top > window.innerHeight / 2) {
+            // Bottom banner
+            widget.style.top = 'auto';
+            widget.style.bottom = (window.innerHeight - rect.top + 10) + 'px';
+        } else {
+            // Top banner
+            widget.style.top = (rect.bottom + 10) + 'px';
+        }
+
+        document.body.appendChild(widget);
+    }
 
 })();

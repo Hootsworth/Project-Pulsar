@@ -19,21 +19,32 @@ if ((typeof chrome === 'undefined' || !chrome.runtime) && window.browser) {
         storage: {
             local: {
                 get: (keys, cb) => {
-                    if (window.browser.storageGet) {
-                        window.browser.storageGet(keys).then(res => cb(res || {}));
+                    if (window.browser?.storageGet) {
+                        const keysArray = typeof keys === 'string' ? [keys] : (Array.isArray(keys) ? keys : Object.keys(keys));
+                        window.browser.storageGet(keysArray).then(res => {
+                            if (typeof keys === 'object' && !Array.isArray(keys)) {
+                                cb({ ...keys, ...res });
+                            } else {
+                                cb(res || {});
+                            }
+                        });
                     } else {
                         cb({});
                     }
                 },
                 set: (items, cb) => {
-                    if (window.browser.storageSet) {
+                    if (window.browser?.storageSet) {
                         window.browser.storageSet(items).then(() => { if (cb) cb(); });
                     } else {
                         if (cb) cb();
                     }
                 }
             },
-            onChanged: { addListener: () => { } }
+            onChanged: {
+                addListener: (fn) => {
+                    if (window.browser?.onStorageChanged) window.browser.onStorageChanged(fn);
+                }
+            }
         }
     };
 }
@@ -183,6 +194,7 @@ const state = {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
+    initSettings(); // Initialize listeners once
     loadSettings();
     loadQuickLinks();
     initTimeWidget();
@@ -206,6 +218,15 @@ document.addEventListener('DOMContentLoaded', () => {
     initSystemAwareness();
     initAIConfig();
 
+    // Listen for storage changes from the main process
+    if (window.browser?.onStorageChanged) {
+        window.browser.onStorageChanged((changes) => {
+            console.log('[Home] Storage changed externally:', Object.keys(changes));
+            // Just reload settings, applySettingsToUI will handle the rest
+            loadSettings();
+        });
+    }
+
     // Check for Intents Search URL parameter (from Omnibox "go" keyword)
     const urlParams = new URLSearchParams(window.location.search);
     const intentsSearchQuery = urlParams.get('intentsSearch');
@@ -216,15 +237,34 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function loadSettings() {
-    const saved = localStorage.getItem('intents-settings');
-    if (saved) {
-        try { state.settings = { ...state.settings, ...JSON.parse(saved) }; } catch (e) { }
-    }
+    // Explicitly request Pulsar's 'wallpaper' and 'themeAccent' keys 
+    // because they aren't part of our local state.settings object
+    const requestKeys = { ...state.settings, wallpaper: 'none', themeAccent: 'default' };
 
-    // Quick Links
+    chrome.storage.local.get(requestKeys, (saved) => {
+        if (saved) {
+            // Map Pulsar's 'wallpaper' to extension's 'customBackground'
+            if (saved.wallpaper) {
+                state.settings.customBackground = saved.wallpaper;
+                // Cleanup temp key
+                delete saved.wallpaper;
+            }
+
+            // Merge other settings
+            Object.assign(state.settings, saved);
+        }
+
+        // Ensure UI updates are synchronized with the next repaint
+        requestAnimationFrame(() => {
+            applySettingsToUI();
+        });
+    });
+}
+
+function initSettings() {
+    // Quick Links Toggle
     const showQuickLinksEl = document.getElementById('showQuickLinks');
     if (showQuickLinksEl) {
-        showQuickLinksEl.checked = state.settings.showQuickLinks;
         showQuickLinksEl.addEventListener('change', (e) => {
             state.settings.showQuickLinks = e.target.checked;
             document.querySelector('.quick-links')?.classList.toggle('hidden', !e.target.checked);
@@ -232,10 +272,9 @@ function loadSettings() {
         });
     }
 
-    // Time Watermark
+    // Time Watermark Toggle
     const showTimeWatermarkEl = document.getElementById('showTimeWatermark');
     if (showTimeWatermarkEl) {
-        showTimeWatermarkEl.checked = state.settings.showTimeWatermark;
         showTimeWatermarkEl.addEventListener('change', (e) => {
             state.settings.showTimeWatermark = e.target.checked;
             document.querySelector('.watermark-container')?.classList.toggle('hidden', !e.target.checked);
@@ -243,39 +282,34 @@ function loadSettings() {
         });
     }
 
-    // New Tab Results
+    // New Tab Results Toggle
     const newTabResultsEl = document.getElementById('newTabResults');
     if (newTabResultsEl) {
-        newTabResultsEl.checked = state.settings.newTabResults;
         newTabResultsEl.addEventListener('change', (e) => {
             state.settings.newTabResults = e.target.checked;
             saveSettings();
         });
     }
 
-
-
-    // Force Dark Mode
+    // Force Dark Mode Toggle
     const forceDarkCheckbox = document.getElementById('forceDarkMode');
     if (forceDarkCheckbox) {
-        forceDarkCheckbox.checked = state.settings.forceDarkMode;
         forceDarkCheckbox.addEventListener('change', (e) => {
             state.settings.forceDarkMode = e.target.checked;
             saveSettings();
         });
     }
 
-    // Offline Game
+    // Offline Game Toggle
     const offlineGameEl = document.getElementById('offlineGame');
     if (offlineGameEl) {
-        offlineGameEl.checked = state.settings.offlineGame;
         offlineGameEl.addEventListener('change', (e) => {
             state.settings.offlineGame = e.target.checked;
             saveSettings();
         });
     }
 
-    // Test Offline Game
+    // Test Offline Game Button
     const testOfflineGameBtn = document.getElementById('testOfflineGame');
     if (testOfflineGameBtn) {
         testOfflineGameBtn.addEventListener('click', () => {
@@ -284,11 +318,9 @@ function loadSettings() {
         });
     }
 
-
-    // Greeting
+    // Greeting Toggle
     const showGreetingCheckbox = document.getElementById('showGreeting');
     if (showGreetingCheckbox) {
-        showGreetingCheckbox.checked = state.settings.showGreeting;
         showGreetingCheckbox.addEventListener('change', (e) => {
             state.settings.showGreeting = e.target.checked;
             document.getElementById('greetingSection')?.classList.toggle('hidden', !e.target.checked);
@@ -296,10 +328,9 @@ function loadSettings() {
         });
     }
 
-    // Focus Goal
+    // Focus Goal Toggle
     const showFocusGoalCheckbox = document.getElementById('showFocusGoal');
     if (showFocusGoalCheckbox) {
-        showFocusGoalCheckbox.checked = state.settings.showFocusGoal;
         showFocusGoalCheckbox.addEventListener('change', (e) => {
             state.settings.showFocusGoal = e.target.checked;
             document.getElementById('focusGoalWidget')?.classList.toggle('hidden', !e.target.checked);
@@ -307,40 +338,9 @@ function loadSettings() {
         });
     }
 
-
-
-    // Apply initial visibility
-    document.getElementById('greetingSection')?.classList.toggle('hidden', !state.settings.showGreeting);
-    document.getElementById('focusGoalWidget')?.classList.toggle('hidden', !state.settings.showFocusGoal);
-    document.querySelector('.watermark-container')?.classList.toggle('hidden', !state.settings.showTimeWatermark);
-
-    // Style buttons visibility
-    document.querySelectorAll('.style-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.style === state.settings.style);
-    });
-
-    // Custom Background
-    if (state.settings.customBackground) {
-        document.querySelectorAll('.bg-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.bg === state.settings.customBackground);
-        });
-        applyBackground();
-    }
-
-    // ===== v5.5.0 NEW SETTINGS =====
-
-    // Accent Color Picker
+    // Accent Color Picker Click
     const accentOptions = document.getElementById('accentOptions');
     if (accentOptions) {
-        // Apply saved accent
-        if (state.settings.themeAccent && state.settings.themeAccent !== 'default') {
-            document.body.setAttribute('data-accent', state.settings.themeAccent);
-        }
-        // Update button states
-        accentOptions.querySelectorAll('.accent-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.accent === state.settings.themeAccent);
-        });
-        // Add click handlers
         accentOptions.addEventListener('click', (e) => {
             const btn = e.target.closest('.accent-btn');
             if (!btn) return;
@@ -352,7 +352,7 @@ function loadSettings() {
             } else {
                 document.body.setAttribute('data-accent', accent);
             }
-            // Update UI
+            // Update UI active state locally
             accentOptions.querySelectorAll('.accent-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             saveSettings();
@@ -363,7 +363,6 @@ function loadSettings() {
     // Enable Sounds Toggle
     const enableSoundsEl = document.getElementById('enableSounds');
     if (enableSoundsEl) {
-        enableSoundsEl.checked = state.settings.enableSounds;
         enableSoundsEl.addEventListener('change', (e) => {
             state.settings.enableSounds = e.target.checked;
             saveSettings();
@@ -374,27 +373,71 @@ function loadSettings() {
     // Reduce Motion Toggle
     const reduceMotionEl = document.getElementById('reduceMotion');
     if (reduceMotionEl) {
-        reduceMotionEl.checked = state.settings.reduceMotion;
-        // Apply on load
-        document.body.classList.toggle('reduce-motion', state.settings.reduceMotion);
         reduceMotionEl.addEventListener('change', (e) => {
             state.settings.reduceMotion = e.target.checked;
             document.body.classList.toggle('reduce-motion', e.target.checked);
             saveSettings();
         });
     }
+}
 
+function applySettingsToUI() {
+    // 1. Sync checkboxed states
+    const checkboxMap = {
+        'showQuickLinks': state.settings.showQuickLinks,
+        'showTimeWatermark': state.settings.showTimeWatermark,
+        'newTabResults': state.settings.newTabResults,
+        'forceDarkMode': state.settings.forceDarkMode,
+        'offlineGame': state.settings.offlineGame,
+        'showGreeting': state.settings.showGreeting,
+        'showFocusGoal': state.settings.showFocusGoal,
+        'enableSounds': state.settings.enableSounds,
+        'reduceMotion': state.settings.reduceMotion
+    };
+
+    for (const [id, value] of Object.entries(checkboxMap)) {
+        const el = document.getElementById(id);
+        if (el) el.checked = value;
+    }
+
+    // 2. Apply Visibility states
+    document.getElementById('greetingSection')?.classList.toggle('hidden', !state.settings.showGreeting);
+    document.getElementById('focusGoalWidget')?.classList.toggle('hidden', !state.settings.showFocusGoal);
+    document.querySelector('.watermark-container')?.classList.toggle('hidden', !state.settings.showTimeWatermark);
     document.getElementById('quickLinks').style.display = state.settings.showQuickLinks ? 'block' : 'none';
+    document.body.classList.toggle('reduce-motion', state.settings.reduceMotion);
+
+    // 3. Style and Theme states
+    document.querySelectorAll('.style-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.style === state.settings.style);
+    });
+
+    // 4. Custom Background active states
+    const bgBtns = document.querySelectorAll('.bg-btn');
+    bgBtns.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.bg === state.settings.customBackground);
+    });
+
+    // 5. Accent active states
+    const accentOptions = document.getElementById('accentOptions');
+    if (accentOptions) {
+        if (state.settings.themeAccent && state.settings.themeAccent !== 'default') {
+            document.body.setAttribute('data-accent', state.settings.themeAccent);
+        } else {
+            document.body.removeAttribute('data-accent');
+        }
+        accentOptions.querySelectorAll('.accent-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.accent === state.settings.themeAccent);
+        });
+    }
+
+    // 6. Apply Styles & Background
+    applyStyles();
+    applyBackground();
 }
 
 function saveSettings() {
-    localStorage.setItem('intents-settings', JSON.stringify(state.settings));
-
-    // Sync critical settings to extension storage for content scripts
-    chrome.storage.local.set({
-        forceDarkMode: state.settings.forceDarkMode,
-        offlineGame: state.settings.offlineGame
-    });
+    chrome.storage.local.set(state.settings);
 }
 
 function applyStyles() {
@@ -412,8 +455,8 @@ function applyBackground() {
     // Toggle class on body for CSS targeting
     document.body.classList.toggle('has-wallpaper', hasWallpaper);
 
-    // Force dark mode when wallpaper is active
-    if (hasWallpaper) {
+    // Force dark mode when wallpaper is active (optimized)
+    if (hasWallpaper && document.documentElement.getAttribute('data-theme') !== 'dark') {
         state.settings.theme = 'dark';
         document.documentElement.setAttribute('data-theme', 'dark');
         document.querySelectorAll('.theme-btn').forEach(b => b.classList.toggle('active', b.dataset.theme === 'dark'));
@@ -456,41 +499,67 @@ function applyBackground() {
     tempImg.src = imgUrl;
     tempImg.onload = () => {
         wp.style.backgroundImage = `url(${imgUrl})`;
+        wp.style.opacity = '1';
         wp.classList.add('active');
     };
+
+    // Apply adaptive accent color
+    applyAdaptiveAccent(imgUrl);
 }
 
 function loadQuickLinks() {
-    const saved = localStorage.getItem('intents-quicklinks');
-    if (saved) { try { state.quickLinks = JSON.parse(saved); } catch (e) { state.quickLinks = []; } }
-    if (state.quickLinks.length === 0) {
-        state.quickLinks = [
-            { name: 'GitHub', url: 'https://github.com' },
-            { name: 'Wikipedia', url: 'https://wikipedia.org' },
-            { name: 'Stack', url: 'https://stackoverflow.com' },
-            { name: 'MDN', url: 'https://developer.mozilla.org' }
-        ];
-        saveQuickLinks();
-    }
-    renderQuickLinks();
+    chrome.storage.local.get(['quickLinks'], (saved) => {
+        if (saved && saved.quickLinks) {
+            state.quickLinks = saved.quickLinks;
+        } else {
+            // Fallback for first load
+            state.quickLinks = [
+                { name: 'GitHub', url: 'https://github.com' },
+                { name: 'Wikipedia', url: 'https://wikipedia.org' },
+                { name: 'Stack', url: 'https://stackoverflow.com' },
+                { name: 'MDN', url: 'https://developer.mozilla.org' }
+            ];
+            saveQuickLinks();
+        }
+        renderQuickLinks();
+    });
 }
 
 
 
-function saveQuickLinks() { localStorage.setItem('intents-quicklinks', JSON.stringify(state.quickLinks)); }
+function saveQuickLinks() {
+    chrome.storage.local.set({ quickLinks: state.quickLinks });
+}
 
 function renderQuickLinks() {
     const grid = document.getElementById('linksGrid');
+    if (!grid) return;
     grid.innerHTML = '';
     state.quickLinks.forEach((link, i) => {
-        const el = document.createElement('a');
-        el.href = link.url;
+        const el = document.createElement('div'); // Use div instead of anchor
         el.className = 'quick-link';
-        el.target = '_blank';
         el.dataset.index = i;
         // Add number badge for shortcuts 1-9
         const numberBadge = i < 9 ? `<span class="quick-link-number">${i + 1}</span>` : '';
-        el.innerHTML = `${numberBadge}<span class="quick-link-name">${link.name}</span><button class="quick-link-delete" data-index="${i}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>`;
+        el.innerHTML = `
+            ${numberBadge}
+            <span class="quick-link-name">${link.name}</span>
+            <button class="quick-link-delete" data-index="${i}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        `;
+
+        el.addEventListener('click', (e) => {
+            if (e.target.closest('.quick-link-delete')) return;
+            if (window.browser?.createTab) {
+                window.browser.createTab(link.url);
+            } else {
+                window.open(link.url, '_blank');
+            }
+        });
+
         grid.appendChild(el);
     });
 
@@ -540,7 +609,12 @@ function initQuickLinkShortcuts() {
             const linkIndex = num - 1;
             if (state.quickLinks && state.quickLinks[linkIndex]) {
                 e.preventDefault();
-                window.open(state.quickLinks[linkIndex].url, '_blank');
+                const url = state.quickLinks[linkIndex].url;
+                if (window.browser?.createTab) {
+                    window.browser.createTab(url);
+                } else {
+                    window.open(url, '_blank');
+                }
             }
         }
     });
@@ -767,6 +841,13 @@ function initRecentSearches() {
     const searchHint = document.getElementById('searchHint');
 
     let currentSuggestion = '';
+    let userHasInteracted = false;
+
+    // Track first user interaction to distinguish between auto-focus and user-intent
+    const setInteracted = () => userHasInteracted = true;
+    ['mousedown', 'keydown', 'touchstart'].forEach(type => {
+        document.addEventListener(type, setInteracted, { once: true, capture: true });
+    });
 
     if (!searchInput || !recentDropdown) return;
 
@@ -810,6 +891,9 @@ function initRecentSearches() {
 
     // Show recent searches on focus if empty
     searchInput.addEventListener('focus', () => {
+        // Prevent dropdown on initial page load autofocus
+        if (!userHasInteracted && searchInput.value === '') return;
+
         if (searchInput.value === '' && recentSearches.length > 0) {
             renderRecentSearches();
             recentDropdown.style.display = 'block';
@@ -971,8 +1055,12 @@ function initEventListeners() {
     // Settings modal
     const settingsModal = document.getElementById('settingsModal');
     settingsToggle?.addEventListener('click', () => {
-        settingsModal.classList.add('active');
-        playSound('whoosh');
+        if (window.browser?.sendMessage) {
+            window.browser.sendMessage({ action: 'openSettings' });
+        } else {
+            settingsModal.classList.add('active');
+            playSound('whoosh');
+        }
     });
     document.getElementById('closeSettings')?.addEventListener('click', () => {
         settingsModal.classList.remove('active');

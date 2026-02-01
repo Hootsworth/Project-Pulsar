@@ -23,7 +23,9 @@ async function loadSettings() {
             const settings = await window.browser.storageGet([
                 'themeAccent', 'theme', 'showQuickLinks',
                 'showTimeWatermark', 'newTabResults', 'aiProvider',
-                'openaiKey', 'geminiKey', 'grokKey', 'llamaKey'
+                'openaiKey', 'geminiKey', 'grokKey', 'llamaKey',
+                'wallpaper', 'forceDarkMode', 'privacyDisclosureEnabled',
+                'incognitoSearchEngine'
             ]);
 
             if (settings.themeAccent && ACCENTS[settings.themeAccent]) {
@@ -55,10 +57,15 @@ async function loadSettings() {
             }
 
             // Restore Toggles
-            ['showQuickLinks', 'showTimeWatermark', 'newTabResults'].forEach(id => {
+            ['showQuickLinks', 'showTimeWatermark', 'newTabResults', 'forceDarkMode', 'privacyDisclosureEnabled'].forEach(id => {
                 const el = $(id);
                 if (el && settings[id] !== undefined) el.checked = settings[id];
             });
+
+            // Restore Wallpaper
+            if (settings.wallpaper) {
+                applyWallpaper(settings.wallpaper, false);
+            }
 
             // Restore AI Provider
             const aiProviderSelect = $('aiProviderSelect');
@@ -68,6 +75,13 @@ async function loadSettings() {
                     group.classList.toggle('hidden', group.id !== `keyGroup_${settings.aiProvider}`);
                 });
             }
+
+            // Restore Selects
+            ['aiProviderSelect', 'incognitoSearchSelect'].forEach(id => {
+                const el = $(id);
+                const settingsKey = id === 'aiProviderSelect' ? 'aiProvider' : 'incognitoSearchEngine';
+                if (el && settings[settingsKey]) el.value = settings[settingsKey];
+            });
 
             // Restore Keys
             ['openai', 'gemini', 'grok', 'llama'].forEach(provider => {
@@ -133,6 +147,13 @@ safeAddListener('btn-split-top', 'click', () => {
     window.browser?.toggleSplitView();
 });
 
+safeAddListener('btn-action-bar-top', 'click', () => {
+    console.log('[Renderer] Navbar button clicked');
+    const overlay = $('action-bar-overlay');
+    const isActive = overlay ? overlay.classList.contains('active') : false;
+    toggleActionBar(!isActive);
+});
+
 // ============================================
 // SIDEBAR CONTROLS & GO SEARCH
 // ============================================
@@ -191,6 +212,10 @@ safeAddListener('go-search-close', 'click', () => toggleModal('go-search-overlay
 safeAddListener('close-lyrics', 'click', () => toggleModal('lyrics-overlay', false));
 safeAddListener('split-picker-close', 'click', () => toggleModal('split-picker-overlay', false));
 
+safeAddListener('incognitoSearchSelect', 'change', (e) => {
+    window.browser?.storageSet({ incognitoSearchEngine: e.target.value });
+});
+
 async function renderArchives() {
     const list = $('archives-list');
     if (!list) return;
@@ -233,6 +258,7 @@ async function renderArchives() {
 
 // Go Search Logic (Omnibox Interceptor)
 const addressInput = $('address-input');
+const topUrlInput = $('url-bar-top');
 const goSearchOverlay = $('go-search-overlay'); // Ensure this element exists in HTML
 let isGoSearchActive = false;
 
@@ -254,17 +280,121 @@ if (addressInput) {
                 }
             } else if (query) {
                 window.browser?.navigate(query);
+                // Keep input empty after navigation (per user request)
+                // addressInput.value = ''; 
                 addressInput.blur();
             }
         }
     });
 
+    // Add logic for Top URL Bar & Autocomplete
+    if (topUrlInput) {
+        const urlDropdown = $('url-dropdown');
+        let selectedSuggestionIndex = -1;
+        let suggestionItems = [];
+
+        async function updateSuggestions(query) {
+            if (!query) {
+                window.browser.updateSuggestionsData({ matches: [] });
+                return;
+            }
+
+            try {
+                const result = await window.browser.storageGet(['footsteps']);
+                const history = result.footsteps || [];
+                const q = query.toLowerCase();
+                const matches = history.filter(item => {
+                    return (item.title && item.title.toLowerCase().includes(q)) ||
+                        (item.domain && item.domain.toLowerCase().includes(q)) ||
+                        (item.url && item.url.toLowerCase().includes(q));
+                }).slice(0, 5);
+
+                suggestionItems = matches;
+                window.browser.updateSuggestionsData({ matches, query, selectedIndex: selectedSuggestionIndex });
+
+            } catch (e) {
+                console.error('Autocomplete error:', e);
+            }
+        }
+
+        topUrlInput.addEventListener('input', (e) => {
+            updateSuggestions(e.target.value.trim());
+        });
+
+        topUrlInput.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (suggestionItems.length > 0) {
+                    selectedSuggestionIndex = (selectedSuggestionIndex + 1) % suggestionItems.length;
+                    window.browser.updateSuggestionsData({ selectedIndex: selectedSuggestionIndex });
+                }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (suggestionItems.length > 0) {
+                    selectedSuggestionIndex = (selectedSuggestionIndex - 1 + suggestionItems.length) % suggestionItems.length;
+                    window.browser.updateSuggestionsData({ selectedIndex: selectedSuggestionIndex });
+                }
+            } else if (e.key === 'Enter') {
+                if (selectedSuggestionIndex >= 0 && suggestionItems[selectedSuggestionIndex]) {
+                    e.preventDefault();
+                    window.browser?.navigate(suggestionItems[selectedSuggestionIndex].url);
+                    topUrlInput.blur();
+                } else {
+                    const query = topUrlInput.value.trim();
+                    if (query) {
+                        window.browser?.navigate(query);
+                        topUrlInput.blur();
+                    }
+                }
+            } else if (e.key === 'Escape') {
+                topUrlInput.blur();
+            }
+        });
+
+        // Auto-select text on focus
+        topUrlInput.addEventListener('focus', () => {
+            topUrlInput.select();
+            selectedSuggestionIndex = -1;
+            window.browser?.setUrlFocus(true);
+        });
+
+        // Hide on blur
+        topUrlInput.addEventListener('blur', () => {
+            window.browser?.setUrlFocus(false);
+        });
+
+        if (window.browser?.onBlurTopBar) {
+            window.browser.onBlurTopBar(() => {
+                topUrlInput.blur();
+            });
+        }
+    }
+
     if (window.browser?.onUpdateUrl) {
         window.browser.onUpdateUrl((url) => {
             if (url && !url.startsWith('file://')) {
-                addressInput.value = url;
+                // Update Top URL Bar always
+                if (topUrlInput && document.activeElement !== topUrlInput) {
+                    // Try to format it nicely? For now just raw URL
+                    // Maybe handle chrome/file protocol hiding
+                    if (url.startsWith('pulsar://') || url.includes('extension/index.html')) {
+                        topUrlInput.value = '';
+                        topUrlInput.placeholder = 'Search or type URL';
+                    } else {
+                        topUrlInput.value = url;
+                    }
+                }
+
+                // Sidebar Logic: KEEP EMPTY unless focused?
+                // Actually the user wants it to be empty "in specific websites" so you can search.
+                // Interpreting as "Don't auto-fill sidebar input with current URL".
+                if (document.activeElement !== addressInput) {
+                    addressInput.value = '';
+                    addressInput.placeholder = 'Search with AI...';
+                }
             } else {
-                addressInput.value = '';
+                if (addressInput) addressInput.value = '';
+                if (topUrlInput) topUrlInput.value = '';
             }
 
             // Handle button visibility based on context
@@ -304,10 +434,13 @@ async function activateGoSearch(query) {
         return;
     }
 
+    const displayQuery = query.includes('User Question:') ?
+        query.split('User Question:').pop().trim() : query;
+
     // Reset UI
     overlay.classList.add('active');
     window.browser?.setAIOverlayVisible(true);
-    bodyEl.innerHTML = '<div class="intents-ai-summary"><span class="intents-ai-label">INTENTS AI</span><div class="go-search-status"><span class="loading-spinner"></span> Synthesizing knowledge for: <strong>' + escapeHtml(query) + '</strong>...</div></div>';
+    bodyEl.innerHTML = '<div class="intents-ai-summary"><span class="intents-ai-label">INTENTS AI</span><div class="go-search-status"><span class="loading-spinner"></span> Synthesizing knowledge for: <strong>' + escapeHtml(displayQuery) + '</strong>...</div></div>';
     fallback.style.display = 'none';
 
     if (closeBtn) {
@@ -329,10 +462,23 @@ async function activateGoSearch(query) {
             bodyEl.innerHTML = `
                 <div class="intents-ai-summary">
                     <span class="intents-ai-label">INTENTS AI</span>
-                    <div id="ai-synthesis-content"></div>
+                    <div id="ai-synthesis-content" class="ai-synthesis-content"></div>
                 </div>
             `;
             const target = $('ai-synthesis-content');
+
+            // Check for GOTO direct navigation
+            if (response.summary.trim().startsWith('GOTO:')) {
+                const url = response.summary.replace('GOTO:', '').trim();
+                target.innerHTML = `<div class="ai-direct-nav">Navigating to matched history: <strong>${url}</strong>...</div>`;
+                setTimeout(() => {
+                    window.browser?.navigate(url);
+                    overlay.classList.remove('active');
+                    window.browser?.setAIOverlayVisible(false);
+                }, 1200);
+                return;
+            }
+
             typewriterEffect(target, response.summary);
 
             // Add links if available
@@ -358,6 +504,15 @@ async function activateGoSearch(query) {
         fallback.style.display = 'block';
         if (googleLink) googleLink.href = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
     }
+}
+
+function formatAIResponse(text) {
+    if (!text) return '';
+    // Bold, lists, code blocks
+    return text
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/`(.*?)`/g, '<code>$1</code>')
+        .replace(/\n/g, '<br>');
 }
 
 // Global listener for Go Search trigger (from main process)
@@ -729,30 +884,15 @@ if (window.browser?.onTabsUpdate) {
 // ============================================
 
 let autohideEnabled = false;
-const btnAutohide = $('btn-autohide');
+const btnAutohide = $('btn-autohide-top');
 const sidebar = $('sidebar');
 const sidebarTrigger = $('sidebar-trigger');
 
-function initAutohide() {
-    if (window.browser?.storageGet) {
-        window.browser.storageGet(['sidebarAutohide']).then(settings => {
-            updateAutohideState(settings.sidebarAutohide || false);
-        });
-    }
+// Autohide logic and state management handled in initAutohide() below
 
-    if (window.browser?.onSidebarVisibility) {
-        window.browser.onSidebarVisibility((data) => {
-            // data = { autohide: bool, visible: bool }
-            updateAutohideState(data.autohide);
-
-            if (data.visible) {
-                sidebar?.classList.add('visible');
-            } else {
-                sidebar?.classList.remove('visible');
-            }
-        });
-    }
-}
+// ============================================
+// AUTOHIDE SIDEBAR LOGIC
+// ============================================
 
 function updateAutohideState(enabled) {
     autohideEnabled = enabled;
@@ -760,74 +900,71 @@ function updateAutohideState(enabled) {
         btnAutohide?.classList.add('active');
         sidebar?.classList.add('autohide');
         sidebar?.classList.remove('persistent');
+        document.body.classList.add('sidebar-autohide');
     } else {
         btnAutohide?.classList.remove('active');
         sidebar?.classList.remove('autohide');
         sidebar?.classList.add('persistent');
+        document.body.classList.remove('sidebar-autohide');
     }
-}
 
-if (btnAutohide) {
-    btnAutohide.addEventListener('click', () => {
-        const newState = !autohideEnabled;
-        updateAutohideState(newState);
-        if (window.browser?.setAutoHide) {
-            window.browser.setAutoHide(newState);
-        }
-    });
+    // CRITICAL: Re-sync split resizer position when mode changes
+    updateSplitResizer();
 }
-
-if (sidebarTrigger) {
-    sidebarTrigger.addEventListener('mouseenter', () => {
-        if (autohideEnabled && window.browser?.setSidebarHover) {
-            window.browser.setSidebarHover(true);
-        }
-    });
-}
-
-if (sidebar) {
-    sidebar.addEventListener('mouseleave', () => {
-        if (autohideEnabled && window.browser?.setSidebarHover) {
-            window.browser.setSidebarHover(false);
-        }
-    });
-}
-
-// ============================================
-// AUTOHIDE SIDEBAR LOGIC
-// ============================================
 
 function initAutohide() {
-    const trigger = $('sidebar-trigger');    // The thin left strip
-    const sidebar = $('sidebar');            // The actual sidebar div
+    // 1. Initial State from Storage
+    if (window.browser?.storageGet) {
+        window.browser.storageGet(['sidebarAutohide']).then(settings => {
+            updateAutohideState(settings.sidebarAutohide || false);
+        });
+    }
 
-    if (trigger && sidebar) {
-        // Show when hovering the trigger zone
-        trigger.addEventListener('mouseenter', () => {
-            // Only trigger if autohide is enabled
-            if (sidebar.classList.contains('autohide')) {
-                sidebar.classList.add('visible');
-                document.body.classList.add('sidebar-open'); // Disable trigger
+    // 2. State Sync from Main Process
+    if (window.browser?.onSidebarVisibility) {
+        window.browser.onSidebarVisibility((data) => {
+            updateAutohideState(data.autohide);
+            if (data.visible) {
+                sidebar?.classList.add('visible');
+            } else {
+                sidebar?.classList.remove('visible');
             }
         });
+    }
 
-        // Keep showing when inside the sidebar
-        sidebar.addEventListener('mouseenter', () => {
-            if (sidebar.classList.contains('autohide')) {
-                sidebar.classList.add('visible');
-                document.body.classList.add('sidebar-open');
+    // 3. Hover Trigger logic
+    if (sidebarTrigger) {
+        sidebarTrigger.addEventListener('mouseenter', () => {
+            if (autohideEnabled && window.browser?.setSidebarHover) {
+                window.browser.setSidebarHover(true);
             }
         });
+    }
 
-        // Hide when leaving the sidebar
+    if (sidebar) {
         sidebar.addEventListener('mouseleave', () => {
-            if (sidebar.classList.contains('autohide')) {
-                sidebar.classList.remove('visible');
-                document.body.classList.remove('sidebar-open'); // Re-enable trigger
+            if (autohideEnabled && window.browser?.setSidebarHover) {
+                window.browser.setSidebarHover(false);
             }
         });
 
-        // Ensure trigger doesn't block clicks when not needed
+        // Ensure sidebar stays visible while mouse is over it
+        sidebar.addEventListener('mouseenter', () => {
+            if (autohideEnabled && window.browser?.setSidebarHover) {
+                window.browser.setSidebarHover(true);
+            }
+        });
+    }
+
+    // 4. Toggle Button
+    if (btnAutohide) {
+        btnAutohide.addEventListener('click', () => {
+            const newState = !autohideEnabled;
+            updateAutohideState(newState);
+            if (window.browser?.setAutoHide) {
+                window.browser.setAutoHide(newState);
+            }
+        });
     }
 }
 
@@ -860,10 +997,113 @@ if (settingsClose && settingsOverlay) {
         window.browser?.setSettingsVisibility(false);
     };
 }
+let currentSplitRatio = 0.5;
+
+function updateSplitResizer() {
+    const resizer = $('split-resizer');
+    if (!resizer || resizer.classList.contains('hidden')) return;
+
+    const sidebar = document.querySelector('.sidebar');
+    const sidebarWidth = sidebar ? sidebar.getBoundingClientRect().width : 240;
+    const isAutoHide = document.body.classList.contains('sidebar-autohide');
+    const xOffset = isAutoHide ? 0 : sidebarWidth;
+
+    // In autohide mode, the sidebar overlays the content, so the content area still starts at 0.
+    const availableWidth = window.innerWidth - xOffset;
+
+    const GAP_WIDTH = 4;
+    const totalContentArea = availableWidth - GAP_WIDTH;
+    const leftWidth = Math.floor(totalContentArea * currentSplitRatio);
+
+    resizer.style.left = `${(xOffset + leftWidth)}px`;
+    resizer.style.width = `4px`; // Match exactly the gap
+    resizer.style.padding = `0 4px`; // Add invisible hit area padding
+    resizer.style.marginLeft = `-4px`; // Center the hit area on the gap
+}
+
 if (window.browser?.onSplitViewChanged) {
     window.browser.onSplitViewChanged((isSplit) => {
         const btn = $('btn-split-top');
         if (btn) btn.classList.toggle('active', isSplit);
+
+        const resizer = $('split-resizer');
+        if (resizer) {
+            if (isSplit) {
+                resizer.classList.remove('hidden');
+                updateSplitResizer();
+            } else {
+                resizer.classList.add('hidden');
+            }
+        }
+    });
+}
+
+if (window.browser?.onSplitRatioUpdate) {
+    window.browser.onSplitRatioUpdate((ratio) => {
+        console.log('[Renderer] Split ratio sync:', ratio);
+        currentSplitRatio = ratio;
+        updateSplitResizer();
+    });
+}
+
+// Keep resizer in sync with window resizing
+window.addEventListener('resize', updateSplitResizer);
+
+// ============================================
+// SPLIT RESIZER DRAG LOGIC
+// ============================================
+
+const splitResizer = $('split-resizer');
+let isDraggingSplit = false;
+
+if (splitResizer) {
+    splitResizer.addEventListener('mousedown', (e) => {
+        isDraggingSplit = true;
+        splitResizer.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        // Add an overlay to prevent webview from eating events
+        const overlay = document.createElement('div');
+        overlay.id = 'drag-overlay';
+        overlay.style.position = 'fixed';
+        overlay.style.inset = '0';
+        overlay.style.zIndex = '9998';
+        overlay.style.background = 'transparent';
+        document.body.appendChild(overlay);
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isDraggingSplit) return;
+
+        const sidebar = document.querySelector('.sidebar');
+        const sidebarWidth = sidebar ? sidebar.getBoundingClientRect().width : 240;
+        const isAutoHide = document.body.classList.contains('sidebar-autohide');
+        const xOffset = isAutoHide ? 0 : sidebarWidth;
+        const availableWidth = window.innerWidth - xOffset;
+
+        const GAP_WIDTH = 4;
+        const totalContentArea = availableWidth - GAP_WIDTH;
+
+        let relativeX = e.clientX - xOffset;
+        let ratio = relativeX / totalContentArea;
+
+        // Constrain ratio
+        ratio = Math.max(0.1, Math.min(0.9, ratio));
+        currentSplitRatio = ratio;
+
+        // Update resizer position
+        updateSplitResizer();
+
+        // Throttle IPC
+        window.browser?.setSplitRatio(ratio);
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (isDraggingSplit) {
+            isDraggingSplit = false;
+            splitResizer.classList.remove('dragging');
+            document.body.style.cursor = '';
+            document.getElementById('drag-overlay')?.remove();
+        }
     });
 }
 
@@ -1008,6 +1248,16 @@ document.querySelectorAll('.accent-btn').forEach(btn => {
     };
 });
 
+// Listener for external storage changes (Theme/Accent Sync)
+if (window.browser?.onStorageChanged) {
+    window.browser.onStorageChanged((changes) => {
+        if (changes.theme || changes.themeAccent) {
+            console.log('[Renderer] Theme/Accent changed externally, updating UI...');
+            loadSettings();
+        }
+    });
+}
+
 // ============================================
 // SETTINGS PERSISTENCE LISTENERS
 // ============================================
@@ -1046,8 +1296,379 @@ document.querySelectorAll('.save-key-btn').forEach(btn => {
 });
 
 // ============================================
-// UPDATER UI LOGIC
+// CONTEXTUAL ACTION BAR LOGIC
 // ============================================
+
+let selectedActionIndex = -1;
+
+function getActionBarElements() {
+    return {
+        overlay: $('action-bar-overlay'),
+        input: $('action-bar-input'),
+        ghost: $('action-bar-ghost'),
+        results: $('action-bar-results'),
+        status: $('action-bar-status'),
+        aiResult: $('action-bar-ai-result')
+    };
+}
+
+function toggleActionBar(show) {
+    const { overlay, input } = getActionBarElements();
+
+    console.log('[Renderer] toggleActionBar called:', show, 'Overlay exists:', !!overlay);
+
+    if (!overlay) {
+        console.error('[Renderer] Action Bar Overlay not found in DOM!');
+        return;
+    }
+
+    if (show) {
+        overlay.classList.add('active');
+        window.browser?.setActionBarVisibility(true);
+        input?.focus();
+        if (input) input.value = '';
+        const { status, aiResult, results } = getActionBarElements();
+        if (status) status.classList.add('hidden');
+        if (aiResult) {
+            aiResult.classList.add('hidden');
+            aiResult.innerHTML = '';
+        }
+        if (results) results.classList.remove('hidden');
+        updateActionBarResults('');
+    } else {
+        overlay.classList.remove('active');
+        window.browser?.setActionBarVisibility(false);
+    }
+}
+
+const COMMANDS = [
+    { title: 'New Tab', desc: 'Open a fresh page', icon: 'plus', shortcut: 'Ctrl+T', action: () => window.browser?.createTab() },
+    { title: 'Split Screen', desc: 'Divide view with another tab', icon: 'split', shortcut: 'Ctrl+S', action: () => window.browser?.toggleSplitView() },
+    { title: 'New Incognito Tab', desc: 'Browse privately', icon: 'shield', action: () => window.browser?.createIncognitoTab() },
+    { title: 'Settings', desc: 'Pulsar preferences', icon: 'settings', shortcut: 'Alt+,', action: () => toggleModal('settings-overlay', true) },
+    { title: 'Clear History', desc: 'Wipe your local trail', icon: 'trash', action: () => { if (confirm('Clear history?')) window.browser?.storageSet({ footsteps: [] }); } },
+    { title: 'Check for Updates', desc: 'See if Pulsar is ready', icon: 'download', action: () => { toggleModal('settings-overlay', true); initSettingsTabs('updates'); } }
+];
+
+const ICONS = {
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>',
+    split: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="12" y1="3" x2="12" y2="21"></line></svg>',
+    shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>',
+    settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>',
+    trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>',
+    download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>',
+    history: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"></path><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>',
+    ai: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>',
+    globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>'
+};
+
+async function updateActionBarResults(query) {
+    const { results, ghost, status, aiResult } = getActionBarElements();
+    if (!results) return;
+
+    // Show thinking if searching
+    if (query.length > 0) {
+        if (status) {
+            status.textContent = 'Thinking...';
+            status.classList.remove('hidden');
+        }
+    } else {
+        if (status) status.classList.add('hidden');
+    }
+
+    if (aiResult) aiResult.classList.add('hidden');
+    results.classList.remove('hidden');
+
+    const q = query.toLowerCase().trim();
+
+    let history = [];
+    try {
+        const stats = await window.browser?.storageGet(['footsteps']);
+        history = stats.footsteps || [];
+    } catch (e) { }
+
+    let sections = [];
+
+    if (!q) {
+        // Default View: Commands + Recent Tabs
+        sections.push({ label: 'Quick Actions', items: COMMANDS.slice(0, 4) });
+        if (history.length > 0) {
+            sections.push({
+                label: 'Recently Visited',
+                items: history.slice(0, 8).map(h => ({
+                    title: h.title || 'Untitled Page',
+                    desc: h.url,
+                    icon: 'history',
+                    action: () => window.browser?.navigate(h.url)
+                }))
+            });
+        }
+        if (ghost) ghost.textContent = 'Type to search or ask anything...';
+    } else {
+        // Filtered View
+        const filteredCommands = COMMANDS.filter(c => c.title.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q));
+        if (filteredCommands.length > 0) {
+            sections.push({ label: 'Commands', items: filteredCommands });
+        }
+
+        const filteredHistory = history.filter(h =>
+            (h.title && h.title.toLowerCase().includes(q)) ||
+            (h.url && h.url.toLowerCase().includes(q))
+        );
+        if (filteredHistory.length > 0) {
+            sections.push({
+                label: 'History Matches',
+                items: filteredHistory.slice(0, 10).map(h => ({
+                    title: h.title || 'Untitled Page',
+                    desc: h.url,
+                    icon: 'globe',
+                    action: () => window.browser?.navigate(h.url)
+                }))
+            });
+        }
+
+        // AI Option
+        sections.push({
+            label: 'Intelligence',
+            items: [{
+                title: `Ask Pulsar: "${query}"`,
+                desc: 'Use recent context to solve your query',
+                icon: 'ai',
+                action: async () => {
+                    const { status, aiResult, results, input } = getActionBarElements();
+                    const userQuery = query; // Keep the original query for display
+
+                    if (status) {
+                        status.textContent = 'Asking AI...';
+                        status.classList.remove('hidden');
+                    }
+                    if (results) results.classList.add('hidden');
+
+                    try {
+                        // Get settings for AI provider
+                        const settings = await window.browser?.storageGet(['aiProvider', 'openaiKey', 'geminiKey', 'grokKey', 'llamaKey', 'intentsSearchKey']);
+
+                        // Get recent context
+                        let history = [];
+                        try {
+                            const stats = await window.browser?.storageGet(['footsteps']);
+                            history = stats.footsteps || [];
+                        } catch (e) { }
+
+                        const lastTabs = history.slice(0, 15).map(t => `${t.title} (${t.url})`).join('\n');
+                        const contextPrompt = `You are the Pulsar Browser Assistant. Use the following browsing history as context to answer. 
+Context (Last 15 visited pages):
+${lastTabs}
+
+If the user is asking specifically about a page in their history (e.g. "what was the last wikipedia page?"), find it and if clear, respond ONLY with: GOTO: [URL].
+Otherwise, answer concisely.
+
+User Question: ${userQuery}`;
+
+                        // Call AI Search
+                        const response = await window.browser?.aiSearch(contextPrompt, settings);
+
+                        if (status) status.classList.add('hidden');
+
+                        if (response.error) {
+                            alert('AI Error: ' + response.error);
+                            toggleActionBar(false);
+                            return;
+                        }
+
+                        // Check for GOTO
+                        if (response.summary && response.summary.startsWith('GOTO:')) {
+                            const url = response.summary.replace('GOTO:', '').trim();
+                            window.browser?.navigate(url);
+                            toggleActionBar(false);
+                            return;
+                        }
+
+                        // Expand bar and show result
+                        if (aiResult) {
+                            aiResult.innerHTML = `<div class="ai-answer-content">${response.summary}</div>`;
+                            aiResult.classList.remove('hidden');
+                        }
+                    } catch (err) {
+                        console.error('[Renderer] Action Bar AI Error:', err);
+                        if (status) status.classList.add('hidden');
+                        toggleActionBar(false);
+                    }
+                }
+            }]
+        });
+
+        if (ghost) {
+            const firstItem = sections[0]?.items[0];
+            ghost.textContent = (firstItem && firstItem.title.toLowerCase().startsWith(q)) ? firstItem.title : '';
+        }
+    }
+
+    // Flatten for indexing
+    const allItems = sections.flatMap(s => s.items);
+    if (selectedActionIndex >= allItems.length) selectedActionIndex = 0;
+    if (selectedActionIndex < 0 && allItems.length > 0) selectedActionIndex = 0;
+
+    results.innerHTML = sections.map(section => `
+        <div class="section-label">${section.label}</div>
+        ${section.items.map(item => {
+        const itemIndex = allItems.indexOf(item);
+        return `
+                <div class="action-bar-item ${itemIndex === selectedActionIndex ? 'selected' : ''}" data-index="${itemIndex}">
+                    <div class="action-icon-box">${ICONS[item.icon] || ICONS.history}</div>
+                    <div class="action-content">
+                        <div class="action-title">${item.title}</div>
+                        <div class="action-desc">${item.desc}</div>
+                    </div>
+                    ${item.shortcut ? `<div class="action-shortcut">${item.shortcut}</div>` : ''}
+                </div>
+            `;
+    }).join('')}
+    `).join('');
+
+    const items = results.querySelectorAll('.action-bar-item');
+    items.forEach((item, i) => {
+        item.onclick = (e) => {
+            e.stopPropagation();
+            allItems[i].action();
+            toggleActionBar(false);
+        };
+        // Auto scroll selected into view
+        if (i === selectedActionIndex) {
+            item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+    });
+
+    results.allItems = allItems;
+}
+
+const { input: paletteInput, overlay: paletteOverlay, ghost: paletteGhost } = getActionBarElements();
+
+paletteInput?.addEventListener('input', (e) => {
+    selectedActionIndex = 0;
+    updateActionBarResults(e.target.value);
+});
+
+paletteInput?.addEventListener('keydown', (e) => {
+    const { results } = getActionBarElements();
+    const allItems = results?.allItems || [];
+
+    if (e.key === 'Escape') {
+        toggleActionBar(false);
+    } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        selectedActionIndex = (selectedActionIndex + 1) % allItems.length;
+        updateActionBarResults(paletteInput.value);
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        selectedActionIndex = (selectedActionIndex - 1 + allItems.length) % allItems.length;
+        updateActionBarResults(paletteInput.value);
+    } else if (e.key === 'Enter') {
+        if (selectedActionIndex >= 0 && allItems[selectedActionIndex]) {
+            allItems[selectedActionIndex].action();
+            toggleActionBar(false);
+        } else if (paletteInput.value.trim()) {
+            // Default: ask AI with context if no match
+            const query = paletteInput.value.trim();
+            toggleActionBar(false);
+            window.browser?.storageGet(['footsteps']).then(res => {
+                const history = res.footsteps || [];
+                const lastTabs = history.slice(0, 15).map(t => `${t.title} (${t.url})`).join('\n');
+                const contextPrompt = `Context from user's history:\n${lastTabs}\n\nUser Message: ${query}`;
+                window.browser?.triggerGoSearch(contextPrompt);
+            });
+        }
+    } else if (e.key === 'Tab' && paletteGhost?.textContent) {
+        e.preventDefault();
+        paletteInput.value = paletteGhost.textContent;
+        updateActionBarResults(paletteInput.value);
+    }
+});
+
+paletteOverlay?.addEventListener('click', (e) => {
+    if (e.target === paletteOverlay) toggleActionBar(false);
+});
+
+// Capture & Blur Listener
+if (window.browser?.onUpdateBlurSnapshot) {
+    window.browser.onUpdateBlurSnapshot((dataUrl) => {
+        const backdrop = $('blur-backdrop');
+        const topUrl = $('url-bar-top');
+        if (backdrop) {
+            if (dataUrl) {
+                backdrop.style.backgroundImage = `url(${dataUrl})`;
+
+                // If Top URL is focused, don't blur (Clean Mode)
+                if (topUrl && document.activeElement === topUrl) {
+                    backdrop.classList.add('clean');
+                } else {
+                    backdrop.classList.remove('clean');
+                }
+
+                backdrop.classList.add('active');
+            } else {
+                backdrop.classList.remove('active');
+                setTimeout(() => {
+                    backdrop.style.backgroundImage = 'none';
+                }, 300);
+            }
+        }
+    });
+}
+
+// Global IPC Listeners for Action Bar and Settings
+if (window.browser?.onOpenSettings) {
+    window.browser.onOpenSettings(() => {
+        // Prevent sidebar from opening the main settings modal
+        if (isSidebarMode) return;
+        toggleModal('settings-overlay', true);
+    });
+}
+
+if (window.browser?.onToggleActionBar) {
+    window.browser.onToggleActionBar(() => {
+        console.log('[Renderer] IPC: Received toggle-action-bar');
+        // Prevent sidebar from opening the action bar
+        if (isSidebarMode) return;
+        const isActive = actionBarOverlay.classList.contains('active');
+        toggleActionBar(!isActive);
+    });
+}
+
+// We need to add toggle-action-bar to preload.js or use generic onInvoke
+// Wait, I didn't add toggle-action-bar to preload.js. Let me check preload.js.
+
+function initSettingsTabs() {
+    const tabBtns = document.querySelectorAll('.settings-tab-btn');
+    const panes = document.querySelectorAll('.settings-pane');
+    const titleEl = $('settings-title');
+
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tabId = btn.dataset.tab;
+
+            // Update buttons
+            tabBtns.forEach(b => b.classList.toggle('active', b === btn));
+
+            // Update panes
+            panes.forEach(pane => {
+                pane.classList.toggle('active', pane.id === `pane-${tabId}`);
+            });
+
+            // Update title
+            if (titleEl) {
+                titleEl.textContent = btn.querySelector('span').textContent;
+            }
+
+            console.log(`[Renderer] Switched to settings tab: ${tabId}`);
+        });
+    });
+}
+
+function initAuth() {
+    // Accounts are currently "Coming Soon"
+    console.log('[Renderer] Accounts system: Coming Soon');
+}
 
 function initUpdaterUI() {
     const btnCheck = $('btn-check-updates');
@@ -1101,9 +1722,6 @@ function initUpdaterUI() {
                 case 'available':
                     statusText.textContent = `Update available: v${data.info.version}`;
                     btnCheck.classList.add('hidden');
-                    // If autoDownload is false, show download button. 
-                    // But in main.js it is true, so it will probably start downloading.
-                    // Let's show "Downloading..." if it starts.
                     break;
                 case 'not-available':
                     statusText.textContent = 'You are up to date!';
@@ -1133,5 +1751,111 @@ function initUpdaterUI() {
     }
 }
 
-document.addEventListener('DOMContentLoaded', initUpdaterUI);
+function applyWallpaper(bgId, save = true) {
+    const wp = $('wallpaper');
+    if (!wp) return;
+
+    const hasWallpaper = bgId !== 'none' && !!bgId;
+    document.body.classList.toggle('has-wallpaper', hasWallpaper);
+
+    // Clear previous special classes
+    wp.classList.remove('minimal-gradient', 'minimal-mesh');
+
+    if (!hasWallpaper) {
+        wp.classList.remove('active');
+        wp.style.backgroundImage = 'none';
+        if (save) window.browser?.storageSet({ wallpaper: 'none' });
+    } else {
+        if (bgId === 'minimal-gradient') {
+            wp.style.backgroundImage = 'none';
+            wp.classList.add('minimal-gradient');
+        } else if (bgId === 'minimal-mesh') {
+            wp.style.backgroundImage = 'none';
+            wp.classList.add('minimal-mesh');
+        } else {
+            let imgUrl = bgId;
+            if (!bgId.startsWith('http')) {
+                imgUrl = `https://images.unsplash.com/${bgId}?auto=format&fit=crop&w=1920&q=80`;
+            }
+            wp.style.backgroundImage = `url(${imgUrl})`;
+        }
+        wp.classList.add('active');
+
+        // Logic for Force Dark Mode
+        const forceDark = $('forceDarkMode')?.checked;
+        if (forceDark) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            window.browser?.storageSet({ theme: 'dark' });
+            // Update UI buttons
+            document.querySelectorAll('.theme-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.theme === 'dark');
+            });
+        }
+
+        if (save) window.browser?.storageSet({ wallpaper: bgId });
+    }
+
+    // Update active state on buttons
+    document.querySelectorAll('.bg-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.bg === bgId);
+    });
+}
+
+function initWallpaperPicker() {
+    const bgBtns = document.querySelectorAll('.bg-btn');
+    bgBtns.forEach(btn => {
+        btn.onclick = () => {
+            const bgId = btn.dataset.bg;
+            applyWallpaper(bgId);
+        };
+    });
+
+    const forceDarkToggle = $('forceDarkMode');
+    if (forceDarkToggle) {
+        forceDarkToggle.onchange = () => {
+            window.browser?.storageSet({ forceDarkMode: forceDarkToggle.checked });
+            // If turning on, and we have a wallpaper, apply it again to trigger theme change
+            if (forceDarkToggle.checked && document.body.classList.contains('has-wallpaper')) {
+                const activeBtn = document.querySelector('.bg-btn.active');
+                if (activeBtn) applyWallpaper(activeBtn.dataset.bg);
+            }
+        };
+    }
+}
+
+function initPrivacyControls() {
+    const privacyToggle = $('privacyDisclosureEnabled');
+    if (privacyToggle) {
+        privacyToggle.onchange = () => {
+            window.browser?.storageSet({ privacyDisclosureEnabled: privacyToggle.checked });
+        };
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    initUpdaterUI();
+    initSettingsTabs();
+    initWallpaperPicker();
+    initPrivacyControls();
+    initAuth();
+    initPulsarMenu();
+});
+
+// ============================================
+// PULSAR MENU (LOGO DROPDOWN)
+// ============================================
+
+function initPulsarMenu() {
+    const toggle = $('logo-dropdown-toggle');
+    if (!toggle) return;
+
+    toggle.onclick = (e) => {
+        e.stopPropagation();
+        const rect = toggle.getBoundingClientRect();
+        window.browser?.showLogoMenu({
+            x: Math.round(rect.left),
+            y: Math.round(rect.bottom)
+        });
+    };
+}
 

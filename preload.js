@@ -58,6 +58,7 @@ try {
         // Tabs
         createTab: (url) => ipcSend('tab-create', url),
         createIncognitoTab: (url) => ipcSend('tab-create-incognito', url),
+        setUrlFocus: (focused) => ipcSend('set-url-focus', focused),
         switchTab: (id) => ipcSend('tab-switch', id),
         closeTab: (id) => ipcSend('tab-close', id),
         pinTab: (id, pinned) => ipcSend('tab-pin', { tabId: id, pinned }),
@@ -73,6 +74,7 @@ try {
         aiSearch: (query, settings) => ipcInvoke('ai-search', { query, settings }),
         setAIOverlayVisible: (visible) => ipcSend('set-ai-overlay-visible', visible),
         setSettingsVisibility: (visible) => ipcSend('set-settings-visibility', visible),
+        setActionBarVisibility: (visible) => ipcSend('set-action-bar-visible', visible),
         setAutoHide: (enabled) => ipcSend('set-autohide', enabled),
         setSidebarHover: (hovered) => ipcSend('set-sidebar-hover', hovered),
 
@@ -82,17 +84,29 @@ try {
         getSelection: () => ipcInvoke('get-selection'),
         toggleSplitView: () => ipcSend('toggle-split-view'),
         splitWithTab: (tabId) => ipcSend('split-with-tab', tabId),
+        setSplitRatio: (ratio) => ipcSend('set-split-ratio', ratio),
         panic: () => ipcSend('panic-close-incognito'),
 
         // Storage
         storageGet: (keys) => ipcInvoke('storage-get', keys),
         storageSet: (items) => ipcInvoke('storage-set', items),
 
-        // Generic Invoke
+        // generic Invoke
         invoke: (channel, ...args) => ipcInvoke(channel, ...args),
         checkUpdates: () => ipcSend('check-updates'),
         downloadUpdate: () => ipcSend('download-update'),
         installUpdate: () => ipcSend('install-update'),
+
+        // Auth
+        startGoogleLogin: () => ipcSend('start-google-login'),
+        clearAuth: () => ipcSend('clear-auth'),
+
+        // Menu Actions
+        makeDefaultBrowser: () => ipcSend('make-default-browser'),
+        createNewWindow: () => ipcSend('new-window'),
+        printPage: () => ipcSend('print-page'),
+        closeApp: () => ipcSend('close-app'),
+        showLogoMenu: (pos) => ipcSend('show-logo-menu', pos),
 
         // Listeners
         onUpdateStatus: (callback) => ipcOn('update-status', callback),
@@ -105,13 +119,24 @@ try {
         onSidebarVisibility: (callback) => ipcOn('sidebar-visibility', callback),
         onGoSearchTrigger: (callback) => ipcOn('go-search-trigger', callback),
         onSplitViewChanged: (callback) => ipcOn('split-view-changed', callback),
-        onOpenSplitPicker: (callback) => ipcOn('open-split-picker', callback)
+        onOpenSplitPicker: (callback) => ipcOn('open-split-picker', callback),
+        onSplitRatioUpdate: (callback) => ipcOn('split-ratio-update', callback),
+        onToggleActionBar: (callback) => ipcOn('toggle-action-bar', callback),
+        onAuthCallback: (callback) => ipcOn('auth-callback', callback),
+        onAuthStatusChanged: (callback) => ipcOn('auth-status-changed', callback),
+        onUpdateBlurSnapshot: (callback) => ipcOn('update-blur-snapshot', callback),
+        updateSuggestionsData: (data) => ipcSend('update-suggestions-data', data),
+        onBlurTopBar: (callback) => ipcOn('blur-top-bar', callback),
+        setTorEnabled: (enabled) => ipcSend('set-tor-enabled', enabled),
+        panicIncognito: () => ipcSend('panic-incognito'),
+        onTorSetupProgress: (callback) => ipcOn('tor-setup-progress', callback),
+        onTorSetupError: (callback) => ipcOn('tor-setup-error', callback)
     });
 
     console.log('[Preload] window.browser exposed successfully');
 
 } catch (err) {
-    console.error('[Preload] Error exposing window.browser:', err);
+    console.error('[Preload] Failed to expose browser API:', err);
 }
 
 // Also expose as electronAPI for shim compatibility

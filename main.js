@@ -3,7 +3,7 @@
  * Handles window management, tabs, navigation, AI search, and storage
  */
 
-const { app, BrowserWindow, BrowserView, ipcMain, screen, session, Menu, MenuItem, nativeImage, safeStorage } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, screen, session, Menu, MenuItem, nativeImage, safeStorage, globalShortcut, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -13,6 +13,48 @@ console.log('[Main] Starting Pulsar...');
 
 // Set app name for consistent userData path
 app.name = 'Pulsar';
+
+// Handle custom protocol for deep linking
+if (process.defaultApp) {
+    if (process.argv.length >= 2) {
+        app.setAsDefaultProtocolClient('pulsar', process.execPath, [path.resolve(process.argv[1])]);
+    }
+} else {
+    app.setAsDefaultProtocolClient('pulsar');
+}
+
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+    app.quit();
+} else {
+    app.on('second-instance', (event, commandLine, workingDirectory) => {
+        // Someone tried to run a second instance, we should focus our window.
+        if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.focus();
+        }
+
+        // Protocol handler for Windows/Linux
+        const url = commandLine.pop();
+        if (url && url.startsWith('pulsar://')) {
+            handleDeepLink(url);
+        }
+    });
+}
+
+function handleDeepLink(urlStr) {
+    console.log('[Main] Handling deep link:', urlStr);
+    try {
+        const url = new URL(urlStr);
+        if (url.hostname === 'auth') {
+            const params = Object.fromEntries(url.searchParams.entries());
+            sendToRenderer('auth-callback', params);
+        }
+    } catch (e) {
+        console.error('[Main] Failed to parse deep link:', e.message);
+    }
+}
 
 // ============================================
 // AUTO-UPDATER CONFIG
@@ -76,6 +118,7 @@ ipcMain.on('install-update', () => {
 const STORAGE_PATH = path.join(app.getPath('userData'), 'intents-storage.json');
 console.log('[Main] Storage path:', STORAGE_PATH);
 const NEW_TAB_URL = path.join(__dirname, 'extension', 'index.html');
+const INCOGNITO_TAB_URL = path.join(__dirname, 'incognito.html');
 
 // Google OAuth Credentials (Replace with yours or set env vars)
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '144962418419-ak7hh1vmkao282tpbpetu02mpv2pql1s.apps.googleusercontent.com';
@@ -85,18 +128,87 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '144962418419-ak7hh1vmk
 // STATE
 // ============================================
 
-let mainWindow = null;
+const { exec, spawn } = require('child_process');
+
+let windows = []; // Array of BrowserWindow objects with extra properties
 let tabs = [];
-let activeTabId = null;
-let previousActiveTabId = null;
 let tabIdCounter = 1;
-let isSettingsOpen = false;
-let isAIOverlayOpen = false;
-let isAutoHideEnabled = false;
-let isSidebarHovered = false;
-let sidebarView = null; // Dedicated view for sidebar overlay
-let folders = []; // Folder storage: { id: string, title: string, isMinimized: boolean, state: 'used'|'warm'|'cold'|'dead' }
+let folders = [];
 let stateTimer = null;
+let splitRatio = 0.5;
+
+// Helper to get state for a window
+function getWindowState(win) {
+    if (!win) return null;
+    return {
+        id: win.id,
+        sidebarView: win._sidebarView,
+        activeTabId: win._activeTabId,
+        isIncognito: win._isIncognito
+    };
+}
+
+// Compatibility helpers for existing code
+let isSettingsOpen = false; // Globally shared for now (modal)
+let isAIOverlayOpen = false;
+let isActionBarOpen = false;
+let isAutoHideEnabled = false;
+let torProcess = null; // Managed Tor daemon
+let incognitoSecret = Math.random().toString(36).substring(2); // Seed for deterministic noise
+
+// Global view references are now deprecated in favor of per-window views,
+// but kept as stubs to prevent immediate errors during migration.
+let mainWindow = null;
+let sidebarView = null;
+let suggestionsView = null;
+
+// ============================================
+// PRIVACY & PERFORMANCE CONSTANTS
+// ============================================
+
+const TRACKING_PARAMS = [
+    'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+    'fbclid', 'gclid', '_ga', '_gl', 'mc_eid', 'msclkid', 'twclid', 'igshid'
+];
+
+const GHOST_USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+];
+
+function throttle(fn, limit) {
+    let lastCall = 0;
+    return function (...args) {
+        const now = Date.now();
+        if (now - lastCall >= limit) {
+            lastCall = now;
+            return fn.apply(this, args);
+        }
+    };
+}
+
+function getRandomUserAgent() {
+    return GHOST_USER_AGENTS[Math.floor(Math.random() * GHOST_USER_AGENTS.length)];
+}
+
+function stripTrackingParams(urlString) {
+    try {
+        const url = new URL(urlString);
+        let changed = false;
+        TRACKING_PARAMS.forEach(param => {
+            if (url.searchParams.has(param)) {
+                url.searchParams.delete(param);
+                changed = true;
+            }
+        });
+        return changed ? url.toString() : urlString;
+    } catch (e) {
+        return urlString;
+    }
+}
 
 // ============================================
 // STORAGE HELPERS
@@ -397,11 +509,95 @@ function setupTabView(tab) {
             contextIsolation: true,
             preload: path.join(__dirname, 'content-preload.js'),
             sandbox: false,
-            partition: sessionPartition
-        }
+            partition: sessionPartition,
+            webrtcIPHandlingPolicy: tab.isIncognito ? 'private_remote_address' : 'default',
+        },
+        backgroundColor: '#ffffff'
     });
 
-    view.webContents.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    const storage = loadStorage();
+    const useGhostUA = storage.ghostMode === true;
+    const ua = tab.isIncognito ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' : (useGhostUA ? getRandomUserAgent() : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
+    view.webContents.setUserAgent(ua);
+
+    // Apply Advanced Anti-Fingerprinting measures
+    if (tab.isIncognito) {
+        const antiFingerprintJS = `
+            (function() {
+                const secret = "${incognitoSecret}";
+                const hash = (str) => {
+                    let h = 0;
+                    for (let i = 0; i < str.length; i++) h = Math.imul(31, h) + str.charCodeAt(i) | 0;
+                    return h;
+                };
+                const sessionSeed = hash(secret);
+
+                // 1. Hardware & OS normalization
+                Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 4 });
+                Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+                Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+                Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+                Object.defineProperty(navigator, 'language', { get: () => 'en-US' });
+                Object.defineProperty(navigator, 'webdriver', { get: () => false });
+                Object.defineProperty(navigator, 'doNotTrack', { get: () => '1' });
+                
+                // 2. Screen & Viewport Consistency (1080p Standard)
+                const screenProps = { width: 1920, height: 1080, availWidth: 1920, availHeight: 1040, colorDepth: 24, pixelDepth: 24 };
+                Object.entries(screenProps).forEach(([prop, val]) => {
+                    Object.defineProperty(screen, prop, { get: () => val });
+                    Object.defineProperty(window.screen, prop, { get: () => val });
+                });
+                window.name = '';
+
+                // 3. Timing Attack Defense (Quantization)
+                const originalNow = performance.now.bind(performance);
+                performance.now = () => Math.floor(originalNow() / 100) * 100;
+                if (window.SharedArrayBuffer) delete window.SharedArrayBuffer; // Prevent high-res timers
+
+                // 4. WebGL Normalization
+                const originalGetParameter = WebGLRenderingContext.prototype.getParameter;
+                WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                    // Spoof Common Renderer Strings
+                    if (parameter === 37445) return 'Intel Inc.'; // UNMASKED_VENDOR_WEBGL
+                    if (parameter === 37446) return 'Intel Iris Pro Graphics'; // UNMASKED_RENDERER_WEBGL
+                    if (parameter === 7936) return 'WebKit'; // VENDOR
+                    if (parameter === 7937) return 'WebKit WebGL'; // RENDERER
+                    return originalGetParameter.apply(this, arguments);
+                };
+
+                // 5. Deterministic Canvas Noise (Stable per session)
+                const originalGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+                CanvasRenderingContext2D.prototype.getImageData = function(x, y, w, h) {
+                    const data = originalGetImageData.apply(this, arguments);
+                    const pixelSeed = sessionSeed + x + y;
+                    for (let i = 0; i < data.data.length; i += 4096) {
+                        data.data[i] = data.data[i] ^ (pixelSeed % 2);
+                    }
+                    return data;
+                };
+
+                // 6. Battery & Network (Disable / Static)
+                if (navigator.getBattery) navigator.getBattery = () => Promise.reject();
+                if (navigator.connection) {
+                    Object.defineProperty(navigator, 'connection', { get: () => ({ 
+                        effectiveType: '4g', rtt: 50, downlink: 10, saveData: false 
+                    })});
+                }
+
+                // 7. Font Defense (Basic measure)
+                const originalMeasureText = CanvasRenderingContext2D.prototype.measureText;
+                CanvasRenderingContext2D.prototype.measureText = function() {
+                    const metrics = originalMeasureText.apply(this, arguments);
+                    // Slight deterministic jitter to metrics
+                    return metrics; 
+                };
+            })();
+        `;
+        view.webContents.on('dom-ready', () => {
+            view.webContents.executeJavaScript(antiFingerprintJS).catch(console.error);
+        });
+    }
     view.setBounds({ x: 0, y: 0, width: 1, height: 1 });
     view.setAutoResize({ width: false, height: false });
 
@@ -465,9 +661,25 @@ function setupTabView(tab) {
     });
 
     view.webContents.on('did-navigate', (event, navUrl) => {
-        tab.url = navUrl;
-        if (tab.id === activeTabId) {
-            sendToRenderer('update-url', navUrl);
+        const storage = loadStorage();
+        let targetUrl = navUrl;
+
+        // Ghost Mode: Strip tracking params
+        if (storage.ghostMode === true) {
+            const stripped = stripTrackingParams(navUrl);
+            if (stripped !== navUrl) {
+                console.log(`[GhostMode] Stripped tracking params from: ${navUrl}`);
+                targetUrl = stripped;
+                // Redirect if params were removed
+                view.webContents.loadURL(stripped).catch(() => { });
+                return; // loadURL will trigger another did-navigate
+            }
+        }
+
+        tab.url = targetUrl;
+        const win = BrowserWindow.fromId(tab.windowId);
+        if (tab.id === win?._activeTabId) {
+            sendToRenderer('update-url', navUrl, 'main', tab.windowId);
         }
 
         // Track footsteps (browsing history)
@@ -484,25 +696,28 @@ function setupTabView(tab) {
             storage.footsteps = footsteps.slice(0, 50);
             saveStorage(storage);
         }
-        updateTabsList();
+        if (win) updateTabsList(win);
     });
 
     view.webContents.on('did-navigate-in-page', (event, navUrl) => {
         tab.url = navUrl;
-        if (tab.id === activeTabId) {
-            sendToRenderer('update-url', navUrl);
+        const win = BrowserWindow.fromId(tab.windowId);
+        if (tab.id === win?._activeTabId) {
+            sendToRenderer('update-url', navUrl, 'main', tab.windowId);
         }
     });
 
     view.webContents.on('page-title-updated', (event, title) => {
         tab.title = title;
-        updateTabsList();
+        const win = BrowserWindow.fromId(tab.windowId);
+        if (win) updateTabsList(win);
     });
 
     view.webContents.on('page-favicon-updated', (event, favicons) => {
         if (favicons.length > 0) {
             tab.favicon = favicons[0];
-            updateTabsList();
+            const win = BrowserWindow.fromId(tab.windowId);
+            if (win) updateTabsList(win);
         }
     });
 
@@ -519,9 +734,24 @@ function setupTabView(tab) {
 function createTab(url = null, isIncognito = false, options = {}) {
     try {
         const tabId = tabIdCounter++;
-        const tabUrl = url || `file://${NEW_TAB_URL}`;
+        let tabUrl = url;
 
-        console.log(`[Main] Creating ${isIncognito ? 'incognito ' : ''}tab ${tabId} with URL: ${tabUrl}`);
+        // Associate with a window
+        let windowId = options.windowId;
+        if (!windowId) {
+            const win = BrowserWindow.getFocusedWindow() || windows[0];
+            windowId = win ? win.id : null;
+        }
+
+        const win = BrowserWindow.fromId(windowId);
+        const winIsIncognito = win ? win._isIncognito : false;
+        const effectiveIncognito = isIncognito || winIsIncognito;
+
+        if (!tabUrl) {
+            tabUrl = effectiveIncognito ? `file://${INCOGNITO_TAB_URL}` : `file://${NEW_TAB_URL}`;
+        }
+
+        console.log(`[Main] Creating ${effectiveIncognito ? 'incognito ' : ''}tab ${tabId} in window ${windowId} with URL: ${tabUrl}`);
 
         const tab = {
             id: tabId,
@@ -531,16 +761,23 @@ function createTab(url = null, isIncognito = false, options = {}) {
             loading: true,
             favicon: options.favicon || null,
             active: false,
-            isIncognito: isIncognito,
+            isIncognito: effectiveIncognito,
+            windowId: windowId,
             folderId: options.folderId || null,
             lastUsed: Date.now(),
             isDead: false,
             isPinned: options.isPinned || false
         };
 
-        setupTabView(tab);
         tabs.push(tab);
-        switchTab(tabId);
+
+        // Support lazy-loading (e.g. for pinned tabs on startup)
+        if (!options.lazy) {
+            setupTabView(tab);
+            switchTab(tabId);
+        } else {
+            tab.isDead = true;
+        }
 
         console.log(`[Main] Tab ${tabId} created successfully. Total tabs: ${tabs.length}`);
         return tabId;
@@ -553,58 +790,51 @@ function createTab(url = null, isIncognito = false, options = {}) {
 
 function switchTab(tabId) {
     try {
-        console.log(`[Main] Switching to tab ${tabId}`);
-        if (activeTabId && activeTabId !== tabId) {
-            previousActiveTabId = activeTabId;
-        }
+        const tab = tabs.find(t => t.id === tabId);
+        if (!tab) return;
 
-        // Deactivate current tab
-        tabs.forEach(tab => {
-            tab.active = false;
-            if (tab.view && mainWindow) {
-                mainWindow.removeBrowserView(tab.view);
+        const win = BrowserWindow.fromId(tab.windowId) || windows[0];
+        if (!win) return;
+
+        console.log(`[Main] Switching to tab ${tabId} in window ${win.id}`);
+
+        // Deactivate only tabs in this same window
+        tabs.forEach(t => {
+            if (t.windowId === win.id) {
+                t.active = false;
+                if (t.view) {
+                    win.removeBrowserView(t.view);
+                }
             }
         });
 
-        // Activate new tab
-        const tab = tabs.find(t => t.id === tabId);
-        if (tab) {
-            tab.active = true;
-            tab.lastUsed = Date.now();
+        tab.active = true;
+        tab.lastUsed = Date.now();
+        tab.isDead = false;
+        win._activeTabId = tabId;
+
+        // Revive tab if it was dead
+        if (!tab.view) {
+            console.log(`[Main] Reviving dead tab ${tabId}`);
+            setupTabView(tab);
             tab.isDead = false;
-            activeTabId = tabId;
-
-            // Revive tab if it was dead
-            if (!tab.view) {
-                console.log(`[Main] Reviving dead tab ${tabId}`);
-                setupTabView(tab);
-                tab.isDead = false;
-            }
-
-            // Only show the view if no overlays are active
-            if (!isSettingsOpen && !isAIOverlayOpen) {
-                mainWindow.addBrowserView(tab.view);
-
-                // If this tab is part of a split, add its partner too
-                if (tab.splitWith) {
-                    const partner = tabs.find(t => t.id === tab.splitWith);
-                    if (partner && partner.view) {
-                        mainWindow.addBrowserView(partner.view);
-                    }
-                }
-            } else {
-                console.log(`[Main] Tab switched to ${tabId} but view hidden due to active overlay`);
-            }
-
-            // Update bounds
-            updateAllTabBounds();
-
-            sendToRenderer('update-url', tab.url || '');
-            updateTabsList();
-            console.log(`[Main] Switched to tab ${tabId}`);
-        } else {
-            console.error(`[Main] Tab ${tabId} not found`);
         }
+
+        // Only show the view if no overlays are active
+        if (!isSettingsOpen && !isAIOverlayOpen) {
+            win.addBrowserView(tab.view);
+
+            // If tab is part of a split, handle partner too
+            if (tab.splitWith) {
+                const partner = tabs.find(p => p.id === tab.splitWith);
+                if (partner && partner.view) {
+                    win.addBrowserView(partner.view);
+                }
+            }
+        }
+
+        updateWindowLayout(win);
+        updateTabsList(win);
 
     } catch (err) {
         console.error('[Main] Error switching tab:', err.message);
@@ -613,73 +843,82 @@ function switchTab(tabId) {
 
 function closeTab(tabId) {
     try {
-        console.log(`[Main] Closing tab ${tabId}`);
-
         const tabIndex = tabs.findIndex(t => t.id === tabId);
-        if (tabIndex === -1) {
-            console.error(`[Main] Tab ${tabId} not found`);
-            return;
-        }
+        if (tabIndex === -1) return;
 
         const tab = tabs[tabIndex];
+        const win = BrowserWindow.fromId(tab.windowId) || windows[0];
 
-        // If this tab was split, unsplit the partner
+        if (tab.view) {
+            if (win) win.removeBrowserView(tab.view);
+            // Destroy view to free memory
+            tab.view.webContents.destroy();
+        }
+
+        // Handle unsplitting
         if (tab.splitWith) {
             const partner = tabs.find(p => p.id === tab.splitWith);
             if (partner) partner.splitWith = null;
         }
 
-        // Remove view from window
-        if (tab.view && mainWindow) {
-            mainWindow.removeBrowserView(tab.view);
-            tab.view.webContents.destroy();
-        }
-
-        // Remove from array
         tabs.splice(tabIndex, 1);
 
-        // If we closed the active tab, switch to another
-        if (tabId === activeTabId) {
-            if (tabs.length > 0) {
-                // Switch to the tab at same index or previous
-                const newIndex = Math.min(tabIndex, tabs.length - 1);
-                switchTab(tabs[newIndex].id);
+        // If it was active, switch to another tab in same window
+        if (win && win._activeTabId === tabId) {
+            const remaining = tabs.filter(t => t.windowId === win.id);
+            if (remaining.length > 0) {
+                switchTab(remaining[remaining.length - 1].id);
             } else {
-                // No tabs left, create new one
-                createTab();
+                win._activeTabId = null;
+                updateTabsList(win);
             }
-        } else {
-            updateTabsList();
+        } else if (win) {
+            updateTabsList(win);
         }
 
-        console.log(`[Main] Tab ${tabId} closed. Remaining tabs: ${tabs.length}`);
+        console.log(`[Main] Tab ${tabId} closed. Total tabs: ${tabs.length}`);
 
     } catch (err) {
         console.error('[Main] Error closing tab:', err.message);
     }
 }
 
-function getActiveTab() {
-    return tabs.find(t => t.id === activeTabId);
+function getActiveTab(winId) {
+    if (winId) {
+        const win = BrowserWindow.fromId(winId);
+        return tabs.find(t => t.id === win?._activeTabId);
+    }
+    // Fallback to currently focused window's active tab
+    const focusedWin = BrowserWindow.getFocusedWindow();
+    if (focusedWin) return tabs.find(t => t.id === focusedWin._activeTabId);
+    return tabs.find(t => t.active);
 }
 
-function updateTabsList() {
+function updateTabsList(win) {
+    if (!win) {
+        // Update all windows
+        windows.forEach(w => updateTabsList(w));
+        return;
+    }
+
     const tabsData = [];
     const processedIds = new Set();
+    const windowTabs = tabs.filter(t => t.windowId === win.id);
 
-    tabs.forEach(t => {
+    windowTabs.forEach(t => {
         if (processedIds.has(t.id)) return;
 
         if (t.splitWith) {
             const partner = tabs.find(p => p.id === t.splitWith);
             if (partner) {
+                const title = t.isIncognito ? 'Incognito' : `${t.title || 'New Tab'} | ${partner.title || 'New Tab'}`;
                 tabsData.push({
                     id: t.id,
                     splitId: partner.id,
-                    title: `${t.title || 'New Tab'} | ${partner.title || 'New Tab'}`,
+                    title: title,
                     url: t.url || '',
-                    favicon: t.favicon || partner.favicon || '',
-                    active: t.active || partner.active,
+                    favicon: t.isIncognito ? '' : (t.favicon || partner.favicon || ''),
+                    active: t.id === win._activeTabId || partner.id === win._activeTabId,
                     isIncognito: t.isIncognito,
                     folderId: t.folderId,
                     lastUsed: Math.max(t.lastUsed, partner.lastUsed),
@@ -690,13 +929,12 @@ function updateTabsList() {
                 processedIds.add(t.id);
                 processedIds.add(partner.id);
             } else {
-                // Partner not found (shouldn't happen but be safe)
                 tabsData.push({
                     id: t.id,
-                    title: t.title || 'New Tab',
+                    title: t.isIncognito ? 'Incognito' : (t.title || 'New Tab'),
                     url: t.url || '',
-                    favicon: t.favicon || '',
-                    active: t.active,
+                    favicon: t.isIncognito ? '' : (t.favicon || ''),
+                    active: t.id === win._activeTabId,
                     isIncognito: t.isIncognito,
                     folderId: t.folderId,
                     lastUsed: t.lastUsed,
@@ -708,10 +946,10 @@ function updateTabsList() {
         } else {
             tabsData.push({
                 id: t.id,
-                title: t.title || 'New Tab',
+                title: t.isIncognito ? 'Incognito' : (t.title || 'New Tab'),
                 url: t.url || '',
-                favicon: t.favicon || '',
-                active: t.active,
+                favicon: t.isIncognito ? '' : (t.favicon || ''),
+                active: t.id === win._activeTabId,
                 isIncognito: t.isIncognito,
                 folderId: t.folderId,
                 lastUsed: t.lastUsed,
@@ -722,12 +960,12 @@ function updateTabsList() {
         }
     });
 
-    const allTabs = tabs.map(t => ({ id: t.id, title: t.title, url: t.url, favicon: t.favicon }));
-    sendToRenderer('tabs-update', { tabs: tabsData, allTabs, folders: folders });
+    const foldersList = folders.map(f => ({ ...f }));
 
-    // Save session
-    saveSession();
+    sendToRenderer('tabs-update', { tabs: tabsData, folders: foldersList, activeId: win._activeTabId }, 'sidebar', win.id);
 }
+
+const saveSessionThrottled = throttle(saveSession, 5000);
 
 function saveSession() {
     // Only save persistent tabs (not incognito)
@@ -779,7 +1017,7 @@ function createFolder(title = 'New Group', color = null) {
         lastUsed: Date.now()
     };
     folders.push(folder);
-    updateTabsList();
+    updateTabsList(); // Updates all windows
     return folder;
 }
 
@@ -794,7 +1032,7 @@ function updateFolderStates() {
         const folderLastUsed = folderTabs.length > 0 ? Math.max(...folderTabs.map(t => t.lastUsed)) : folder.lastUsed;
         const diff = now - folderLastUsed;
 
-        if (folderTabs.some(t => t.id === activeTabId)) {
+        if (windows.some(win => folderTabs.some(t => t.id === win._activeTabId))) {
             folder.state = 'used';
         } else if (diff < WARM_THRESHOLD) {
             folder.state = 'warm';
@@ -820,7 +1058,8 @@ function updateFolderStates() {
 
         if (shouldBeDead && tab.view) {
             console.log(`[Main] Hibernating tab ${tab.id} (Dead state)`);
-            if (mainWindow) mainWindow.removeBrowserView(tab.view);
+            const win = BrowserWindow.fromId(tab.windowId);
+            if (win) win.removeBrowserView(tab.view);
             tab.view.webContents.destroy();
             tab.view = null;
             tab.isDead = true;
@@ -855,7 +1094,15 @@ function navigate(urlInput) {
                 url = 'https://' + url;
             } else {
                 // Treat as search query
-                url = `https://www.google.com/search?q=${encodeURIComponent(url)}`;
+                const storage = loadStorage();
+                const isIncognito = tab.isIncognito;
+                const engine = (isIncognito && (storage.incognitoSearchEngine || 'duckduckgo')) || 'google';
+
+                if (engine === 'duckduckgo') {
+                    url = `https://duckduckgo.com/?q=${encodeURIComponent(url)}`;
+                } else {
+                    url = `https://www.google.com/search?q=${encodeURIComponent(url)}`;
+                }
             }
         }
 
@@ -1185,24 +1432,199 @@ function callLlama(query, apiKey, systemPrompt = GENERIC_SYSTEM_PROMPT) {
 // IPC HELPER
 // ============================================
 
-function sendToRenderer(channel, data) {
+function sendToRenderer(channel, data, target = 'all', winId = null) {
     try {
-        if (mainWindow && mainWindow.webContents) {
-            mainWindow.webContents.send(channel, data);
-        }
-        if (sidebarView && sidebarView.webContents) {
-            sidebarView.webContents.send(channel, data);
-        }
-        // Also broadcast to all active tab views
-        tabs.forEach(tab => {
-            if (tab.view && tab.view.webContents) {
-                tab.view.webContents.send(channel, data);
+        const targetWindows = winId ? [BrowserWindow.fromId(winId)].filter(Boolean) : windows;
+
+        targetWindows.forEach(win => {
+            if ((target === 'all' || target === 'main') && win && win.webContents) {
+                win.webContents.send(channel, data);
+            }
+            if ((target === 'all' || target === 'sidebar') && win && win._sidebarView && win._sidebarView.webContents) {
+                win._sidebarView.webContents.send(channel, data);
             }
         });
+
+        // Also broadcast to active tab views if target is all or tabs
+        if (target === 'all' || target === 'tabs') {
+            tabs.forEach(tab => {
+                if (!winId || tab.windowId === winId) {
+                    if (tab.view && tab.view.webContents) {
+                        tab.view.webContents.send(channel, data);
+                    }
+                }
+            });
+        }
     } catch (err) {
         console.error(`[Main] Error sending to renderer (${channel}):`, err.message);
     }
 }
+
+// ============================================
+// TOR SERVICE MANAGEMENT
+// ============================================
+
+const TOR_URL = 'https://dist.torproject.org/torbrowser/13.0.10/tor-expert-bundle-windows-x86_64-13.0.10.tar.gz';
+const TOR_DIR = path.join(app.getPath('userData'), 'tor');
+const TOR_EXE = path.join(TOR_DIR, 'tor', 'tor.exe');
+
+async function ensureTorBinary() {
+    if (fs.existsSync(TOR_EXE)) return true;
+
+    console.log('[Tor] Binary not found, starting download...');
+    if (!fs.existsSync(TOR_DIR)) fs.mkdirSync(TOR_DIR, { recursive: true });
+
+    const tarPath = path.join(TOR_DIR, 'tor.tar.gz');
+
+    return new Promise((resolve, reject) => {
+        let redirectCount = 0;
+        const download = (url) => {
+            if (redirectCount > 5) {
+                return reject(new Error('Too many redirects'));
+            }
+
+            const options = {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+                },
+                timeout: 15000 // 15s timeout
+            };
+
+            https.get(url, options, (response) => {
+                // Handle Redirects
+                if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+                    redirectCount++;
+                    console.log('[Tor] Redirecting to:', response.headers.location);
+                    return download(response.headers.location);
+                }
+
+                if (response.statusCode !== 200) {
+                    console.error('[Tor] Download failed with status:', response.statusCode);
+                    return reject(new Error(`Failed to download Tor: ${response.statusCode}`));
+                }
+
+                const totalSize = parseInt(response.headers['content-length'], 10) || 0;
+                let downloaded = 0;
+
+                const file = fs.createWriteStream(tarPath);
+                response.on('data', (chunk) => {
+                    downloaded += chunk.length;
+                    if (totalSize > 0) {
+                        const progress = Math.min(99, Math.round((downloaded / totalSize) * 100));
+                        sendToRenderer('tor-setup-progress', { status: 'Downloading', progress });
+                    } else {
+                        // Unknown size, update text but keep spinner moving
+                        sendToRenderer('tor-setup-progress', { status: `Downloading (${Math.round(downloaded / 1024 / 1024)}MB)`, progress: 0 });
+                    }
+                });
+
+                response.pipe(file);
+                file.on('finish', () => {
+                    file.close();
+                    console.log('[Tor] Download complete');
+                    const stats = fs.statSync(tarPath);
+                    if (stats.size < 1000000) {
+                        console.error('[Tor] File too small:', stats.size);
+                        sendToRenderer('tor-setup-error', 'Download corrupted');
+                        return reject(new Error('File too small'));
+                    }
+
+                    console.log('[Tor] Extraction starting...');
+                    sendToRenderer('tor-setup-progress', { status: 'Extracting', progress: 100 });
+
+                    // Use built-in Windows tar
+                    exec(`tar -xzf "${tarPath}" -C "${TOR_DIR}"`, (err, stdout, stderr) => {
+                        if (err) {
+                            console.error('[Tor] Extraction failed:', err);
+                            sendToRenderer('tor-setup-error', 'Extraction failed');
+                            return reject(err);
+                        }
+                        console.log('[Tor] Extraction complete');
+                        if (fs.existsSync(tarPath)) fs.unlinkSync(tarPath);
+                        resolve(true);
+                    });
+                });
+            }).on('error', (err) => {
+                console.error('[Tor] Network error:', err.message);
+                if (fs.existsSync(tarPath)) fs.unlinkSync(tarPath);
+                sendToRenderer('tor-setup-error', 'Connection failed');
+                reject(err);
+            }).on('timeout', () => {
+                console.error('[Tor] Connection timed out');
+                sendToRenderer('tor-setup-error', 'Download timed out');
+                reject(new Error('Timeout'));
+            });
+        };
+
+        download(TOR_URL);
+    });
+}
+
+function startTorService() {
+    return new Promise(async (resolve, reject) => {
+        if (torProcess) return resolve(true);
+
+        try {
+            await ensureTorBinary();
+            console.log('[Tor] Starting process...');
+            sendToRenderer('tor-setup-progress', { status: 'Bootstrapping', progress: 0 });
+
+            torProcess = spawn(TOR_EXE, ['--ignore-missing-torrc'], {
+                detached: false,
+                windowsHide: true,
+                cwd: path.dirname(TOR_EXE)
+            });
+
+            // Capture both stdout and stderr as Tor logs to both
+            const handleLog = (data) => {
+                const output = data.toString();
+                if (output.includes('Bootstrapped')) {
+                    const match = output.match(/Bootstrapped (\d+)%/);
+                    if (match) {
+                        const progress = parseInt(match[1], 10);
+                        sendToRenderer('tor-setup-progress', { status: 'Bootstrapping', progress });
+                        if (progress === 100) {
+                            console.log('[Tor] Service is ready.');
+                            resolve(true);
+                        }
+                    }
+                }
+                if (output.includes('[err]')) {
+                    console.error('[Tor] Service reported error:', output.trim());
+                }
+            };
+
+            torProcess.stdout.on('data', handleLog);
+            torProcess.stderr.on('data', handleLog);
+
+            torProcess.on('error', (err) => {
+                console.error('[Tor] Process failed to spawn:', err);
+                sendToRenderer('tor-setup-error', 'Tor process failed');
+                torProcess = null;
+                reject(err);
+            });
+
+            torProcess.on('exit', () => {
+                console.log('[Tor] Process exited');
+                torProcess = null;
+            });
+
+        } catch (e) {
+            reject(e);
+        }
+    });
+}
+
+function stopTorService() {
+    if (torProcess) {
+        console.log('[Tor] Stopping service...');
+        torProcess.kill();
+        torProcess = null;
+    }
+}
+
+// Ensure cleanup on quit
+app.on('will-quit', stopTorService);
 
 // ============================================
 // PRIVACY ENGINE
@@ -1214,83 +1636,139 @@ function initializePrivacyEngine() {
     // Configure Incognito Session
     const incognitoSession = session.fromPartition('memory:incognito_session');
     configurePrivacySession(incognitoSession, true);
+
+    // Configure Default Session
+    configurePrivacySession(session.defaultSession, false);
 }
 
 function configurePrivacySession(sess, isIncognito) {
-    if (isIncognito) {
-        // Tracker Blocking
-        const TRACKER_DOMAINS = [
-            'google-analytics.com', 'doubleclick.net', 'googlesyndication.com',
-            'facebook.net', 'facebook.com/tr', 'adnxs.com', 'quantserve.com',
-            'scorecardresearch.com', 'amazon-adsystem.com', 'hotjar.com',
-            'pixel.facebook.com', 'analytics.twitter.com', 'googleadservices.com',
-            'crazyegg.com', 'mixpanel.com', 'optimizely.com'
-        ];
+    const storage = loadStorage();
+    const isTurbo = storage.performanceTurbo === true;
+    const isGhost = storage.ghostMode === true;
+    const isDisclosureEnabled = storage.privacyDisclosureEnabled === true; // Default false
 
-        sess.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, callback) => {
-            const url = details.url.toLowerCase();
-            const isTracker = TRACKER_DOMAINS.some(domain => url.includes(domain));
+    // Initialize stats for this session if needed
+    if (!sess.trackerStats) {
+        sess.trackerStats = new Map(); // tabId -> { total: 0, advertising: 0, analytics: 0, social: 0, other: 0 }
+    }
 
-            if (isTracker) {
-                return callback({ cancel: true });
+    // Tracker Categorization
+    const getTrackerCategory = (url) => {
+        if (url.includes('facebook') || url.includes('twitter') || url.includes('linkedin') || url.includes('pinterest') || url.includes('instagram') || url.includes('tiktok')) return 'social';
+        if (url.includes('google-analytics') || url.includes('hotjar') || url.includes('crazyegg') || url.includes('mixpanel') || url.includes('segment') || url.includes('optimizely') || url.includes('scorecardresearch')) return 'analytics';
+        if (url.includes('doubleclick') || url.includes('googlesyndication') || url.includes('adnxs') || url.includes('amazon-adsystem') || url.includes('pubmatic') || url.includes('criteo') || url.includes('taboola') || url.includes('outbrain')) return 'advertising';
+        return 'other';
+    };
+
+    // Tracker Blocking
+    const TRACKER_DOMAINS = [
+        'google-analytics.com', 'doubleclick.net', 'googlesyndication.com',
+        'facebook.net', 'facebook.com/tr', 'adnxs.com', 'quantserve.com',
+        'scorecardresearch.com', 'amazon-adsystem.com', 'hotjar.com',
+        'pixel.facebook.com', 'analytics.twitter.com', 'googleadservices.com',
+        'crazyegg.com', 'mixpanel.com', 'optimizely.com'
+    ];
+
+    // Additional Performance Turbo blocks
+    const TURBO_BLOCKS = [
+        'adsystem.com', 'adservice.google', 'taboola.com', 'outbrain.com',
+        'chartbeat.com', 'intercom.io', 'newrelic.com', 'sentry.io'
+    ];
+
+    sess.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, callback) => {
+        const url = details.url.toLowerCase();
+        const isTracker = TRACKER_DOMAINS.some(domain => url.includes(domain));
+        const isTurboBlock = isTurbo && TURBO_BLOCKS.some(domain => url.includes(domain));
+
+        if (isTracker || isTurboBlock) {
+            // Count it
+            if (details.webContentsId) { // webContentsId usually maps to tabId in simple cases, but we need reliable mapping.
+                // For now, attaching to the request's webContents.
+                const stats = sess.trackerStats.get(details.webContentsId) || { total: 0, advertising: 0, analytics: 0, social: 0, other: 0 };
+                stats.total++;
+                const cat = getTrackerCategory(url);
+                stats[cat]++;
+                sess.trackerStats.set(details.webContentsId, stats);
             }
+            return callback({ cancel: true });
+        }
 
-            // HTTPS Enforcement in Incognito
-            if (url.startsWith('http://') && !url.includes('localhost') && !url.includes('127.0.0.1')) {
-                const secureUrl = url.replace('http://', 'https://');
-                return callback({ redirectURL: secureUrl });
-            }
+        // HTTPS Enforcement in Incognito or Ghost Mode
+        if ((isIncognito || isGhost) && url.startsWith('http://') && !url.includes('localhost') && !url.includes('127.0.0.1')) {
+            const secureUrl = url.replace('http://', 'https://');
+            return callback({ redirectURL: secureUrl });
+        }
 
-            callback({});
-        });
+        callback({});
+    });
 
-        // Referrer Scrubbing
-        sess.webRequest.onBeforeSendHeaders({ urls: ['*://*/*'] }, (details, callback) => {
-            const requestHeaders = details.requestHeaders;
+    // Strict Permissions & Anti-Fingerprinting Headers
+    sess.setPermissionRequestHandler((webContents, permission, callback) => {
+        if (isIncognito) return callback(false); // Auto-deny all sensors/notifs in Incognito
 
+        const sensitive = ['geolocation', 'notifications', 'midi', 'media'];
+        if (sensitive.includes(permission)) {
+            return callback(false); // Default block for sensitive permissions
+        }
+        callback(true);
+    });
+
+    sess.webRequest.onBeforeSendHeaders({ urls: ['*://*/*'] }, (details, callback) => {
+        const requestHeaders = details.requestHeaders;
+
+        if (isIncognito || isGhost) {
+            // Referrer scrubbing (Cross-domain)
             if (requestHeaders['Referer']) {
                 try {
                     const ref = new URL(requestHeaders['Referer']);
                     const target = new URL(details.url);
-                    // Scrub referrer for cross-origin requests
                     if (ref.hostname !== target.hostname) {
                         delete requestHeaders['Referer'];
                     }
                 } catch (e) { }
             }
+            requestHeaders['DNT'] = '1';
 
-            requestHeaders['DNT'] = '1'; // Do Not Track
+            // User-Agent Client Hints stripping (Strict Privacy)
+            const uaCHHeaders = [
+                'sec-ch-ua', 'sec-ch-ua-mobile', 'sec-ch-ua-platform',
+                'sec-ch-ua-arch', 'sec-ch-ua-model', 'sec-ch-ua-platform-version',
+                'sec-ch-ua-full-version', 'sec-ch-ua-full-version-list'
+            ];
+            uaCHHeaders.forEach(h => delete requestHeaders[h]);
+            requestHeaders['Accept-Language'] = 'en-US,en;q=0.9';
+        }
+        callback({ requestHeaders });
+    });
+}
 
-            callback({ requestHeaders });
-        });
-
-        // Strict Permissions
-        sess.setPermissionRequestHandler((webContents, permission, callback) => {
-            const sensitive = ['geolocation', 'notifications', 'midi', 'media'];
-            if (sensitive.includes(permission)) {
-                return callback(false); // Default block in private mode
-            }
-            callback(true);
-        });
-    }
+function getRandomUserAgent() {
+    const uas = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0'
+    ];
+    return uas[Math.floor(Math.random() * uas.length)];
 }
 
 // ============================================
 // WINDOW CREATION
 // ============================================
 
-function createWindow() {
+function createWindow(options = {}) {
     try {
-        console.log('[Main] Creating main window...');
+        const isIncognito = !!options.isIncognito;
+        console.log(`[Main] Creating ${isIncognito ? 'incognito ' : ''}window...`);
 
-        mainWindow = new BrowserWindow({
+        const win = new BrowserWindow({
             width: 1200,
             height: 800,
             minWidth: 800,
             minHeight: 600,
             frame: false,
             icon: path.join(__dirname, 'icon.png'),
-            backgroundColor: '#050505',
+            backgroundColor: isIncognito ? '#000000' : '#050505',
             webPreferences: {
                 nodeIntegration: false,
                 contextIsolation: true,
@@ -1298,41 +1776,62 @@ function createWindow() {
             }
         });
 
-        mainWindow.loadFile('index.html');
+        win._isIncognito = isIncognito;
+        win._activeTabId = null;
+        win._isSidebarHovered = false;
+        win._sidebarHideTimeout = null;
+        windows.push(win);
 
-        mainWindow.webContents.on('did-finish-load', () => {
-            console.log('[Main] Main window loaded');
-            // Initial tab creation matches moved to app.whenReady to support session restore
-        });
+        // Map to global mainWindow for non-incognito for legacy support
+        if (!isIncognito && !mainWindow) {
+            mainWindow = win;
+        }
 
-        // Handle window resize - update all tab bounds
-        mainWindow.on('resize', () => {
-            updateAllTabBounds();
-            if (sidebarView) {
-                updateSidebarBounds();
+        win.loadFile('index.html');
+
+        win.webContents.on('did-finish-load', () => {
+            console.log(`[Main] Window ${win.id} loaded (Incognito: ${isIncognito})`);
+
+            // Create a first tab if it's a new window and not restoring
+            if (!isIncognito && tabs.length === 0) {
+                createTab(null, false, { windowId: win.id });
+            } else if (isIncognito) {
+                createTab(null, true, { windowId: win.id });
             }
         });
 
-        mainWindow.on('maximize', () => {
-            updateAllTabBounds();
+        // Handle window resize - throttled for performance
+        win.on('resize', throttle(() => {
+            updateWindowLayout(win);
+        }, 16));
+
+        win.on('maximize', () => updateWindowLayout(win));
+        win.on('unmaximize', () => updateWindowLayout(win));
+
+        win.on('focus', () => {
+            // Keep track of which window was last focused for IPC routing
+            // (but most IPC should use event.sender)
         });
 
-        mainWindow.on('unmaximize', () => {
-            updateAllTabBounds();
+        win.on('closed', () => {
+            windows = windows.filter(w => w !== win);
+            if (win === mainWindow) mainWindow = windows.find(w => !w._isIncognito) || null;
         });
 
-        mainWindow.on('closed', () => {
-            mainWindow = null;
-        });
+        createSidebarView(win);
 
-        // Open DevTools in development
-        // mainWindow.webContents.openDevTools();
-
-        console.log('[Main] Main window created successfully');
+        console.log(`[Main] Window ${win.id} created successfully`);
+        return win;
 
     } catch (err) {
         console.error('[Main] Error creating window:', err.message);
     }
+}
+
+function updateWindowLayout(win) {
+    if (!win) return;
+    updateSidebarBounds(win);
+    updateAllTabBounds(win);
 }
 
 // ============================================
@@ -1431,26 +1930,26 @@ ipcMain.on('folder-update-meta', (event, { id, title, color }) => {
     if (folder) {
         if (title) folder.title = title;
         if (color) folder.color = color;
-        updateTabsList();
+        updateTabsList(); // Updates all windows
     }
 });
 
 ipcMain.on('folder-delete', (event, folderId) => {
     folders = folders.filter(f => f.id !== folderId);
     tabs.forEach(t => { if (t.folderId === folderId) t.folderId = null; });
-    updateTabsList();
+    updateTabsList(); // Updates all windows
 });
 
 ipcMain.on('folder-minimize', (event, { folderId, minimized }) => {
     const folder = folders.find(f => f.id === folderId);
     if (folder) folder.isMinimized = minimized;
-    updateTabsList();
+    updateTabsList(); // Updates all windows
 });
 
 ipcMain.on('tab-move-to-folder', (event, { tabId, folderId }) => {
     const tab = tabs.find(t => t.id === tabId);
     if (tab) tab.folderId = folderId;
-    updateTabsList();
+    updateTabsList(); // Updates all windows
 });
 
 ipcMain.on('tab-pin', (event, { tabId, pinned }) => {
@@ -1460,7 +1959,7 @@ ipcMain.on('tab-pin', (event, { tabId, pinned }) => {
         // Pinned tabs shouldn't be in folders
         if (pinned) tab.folderId = null;
     }
-    updateTabsList();
+    updateTabsList(); // Updates all windows
 });
 
 // AI Search (invoke = async response)
@@ -1481,9 +1980,68 @@ ipcMain.on('go-search-trigger', (event, { query }) => {
     }
 });
 
-ipcMain.on('toggle-split-view', () => {
-    console.log('[Main] IPC: toggle-split-view');
-    const activeTab = tabs.find(t => t.id === activeTabId);
+ipcMain.on('set-split-ratio', (event, ratio) => {
+    splitRatio = Math.max(0.1, Math.min(0.9, ratio));
+    updateAllTabBounds();
+
+    // Persist split ratio
+    const storage = loadStorage();
+    storage.splitRatio = splitRatio;
+    saveStorage(storage);
+});
+
+ipcMain.on('set-tor-enabled', async (event, enabled) => {
+    console.log('[Main] IPC: set-tor-enabled', enabled);
+    const incognitoSession = session.fromPartition('memory:incognito_session');
+
+    if (enabled) {
+        try {
+            await startTorService();
+            // Tor SOCKS5 proxy
+            await incognitoSession.setProxy({
+                proxyRules: 'socks5://127.0.0.1:9050',
+                proxyBypassRules: '<local>'
+            });
+            console.log('[Main] Tor proxy enabled for incognito session');
+        } catch (err) {
+            console.error('[Main] Failed to start Tor or set proxy:', err);
+            sendToRenderer('tor-setup-error', 'Failed to start Tor service');
+        }
+    } else {
+        stopTorService();
+        // Clear proxy
+        await incognitoSession.setProxy({
+            proxyRules: '',
+            proxyBypassRules: ''
+        });
+        console.log('[Main] Tor proxy disabled for incognito session');
+    }
+});
+
+ipcMain.on('panic-incognito', async () => {
+    console.log('[Main] IPC: panic-incognito - Closing all incognito tabs and clearing session');
+
+    // Close all incognito tabs
+    const incognitoTabs = tabs.filter(t => t.isIncognito);
+    incognitoTabs.forEach(t => closeTab(t.id));
+
+    // Wipe session data
+    const incSess = session.fromPartition('memory:incognito_session');
+    await incSess.clearStorageData();
+    await incSess.clearCache();
+
+    // Regenerate seed for next session
+    incognitoSecret = Math.random().toString(36).substring(2);
+
+    console.log('[Main] Panic complete.');
+});
+
+ipcMain.on('toggle-split-view', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+
+    console.log(`[Main] IPC: toggle-split-view for window ${win.id}`);
+    const activeTab = tabs.find(t => t.id === win._activeTabId);
     if (!activeTab) return;
 
     if (activeTab.splitWith) {
@@ -1491,43 +2049,65 @@ ipcMain.on('toggle-split-view', () => {
         const partner = tabs.find(t => t.id === activeTab.splitWith);
         if (partner) {
             partner.splitWith = null;
-            if (partner.view && mainWindow) mainWindow.removeBrowserView(partner.view);
+            if (partner.view) win.removeBrowserView(partner.view);
         }
         activeTab.splitWith = null;
-        updateAllTabBounds();
-        updateTabsList();
-        sendToRenderer('split-view-changed', false);
+        updateWindowLayout(win);
+        updateTabsList(win);
+        sendToRenderer('split-view-changed', false, 'main', win.id);
     } else {
         // Try to split
-        if (tabs.length === 2) {
-            // Auto-split with the only other tab
-            const otherTab = tabs.find(t => t.id !== activeTabId);
+        const winTabs = tabs.filter(t => t.windowId === win.id);
+        if (winTabs.length === 2) {
+            // Auto-split with the only other tab in this window
+            const otherTab = winTabs.find(t => t.id !== win._activeTabId);
             if (otherTab) {
                 activeTab.splitWith = otherTab.id;
-                otherTab.splitWith = activeTabId;
-                if (otherTab.view && mainWindow && !isSettingsOpen && !isAIOverlayOpen) {
-                    mainWindow.addBrowserView(otherTab.view);
+                otherTab.splitWith = activeTab.id;
+                if (otherTab.view && !isSettingsOpen && !isAIOverlayOpen) {
+                    win.addBrowserView(otherTab.view);
                 }
-                updateAllTabBounds();
-                updateTabsList();
-                sendToRenderer('split-view-changed', true);
+                updateWindowLayout(win);
+                updateTabsList(win);
+                sendToRenderer('split-view-changed', true, 'main', win.id);
             }
         } else {
             // Ask which tab to split with
-            sendToRenderer('open-split-picker');
+            sendToRenderer('open-split-picker', null, 'main', win.id);
         }
     }
 });
 
+// Tracker Disclosure IPC
+ipcMain.handle('get-tracker-stats', (event) => {
+    const storage = loadStorage();
+    if (storage.privacyDisclosureEnabled !== true) {
+        return { total: 0, advertising: 0, analytics: 0, social: 0, other: 0 };
+    }
+
+    const tabId = event.sender.id;
+    // Check incognito first
+    const incognitoSession = session.fromPartition('memory:incognito_session');
+    const incognitoStats = incognitoSession.trackerStats ? incognitoSession.trackerStats.get(tabId) : null;
+
+    // Check default session
+    const defaultStats = session.defaultSession.trackerStats ? session.defaultSession.trackerStats.get(tabId) : null;
+
+    return incognitoStats || defaultStats || { total: 0, advertising: 0, analytics: 0, social: 0, other: 0 };
+});
+
 ipcMain.on('split-with-tab', (event, targetTabId) => {
-    const activeTab = tabs.find(t => t.id === activeTabId);
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+
+    const activeTab = tabs.find(t => t.id === win._activeTabId);
     if (!activeTab) return;
 
     if (targetTabId === 'new') {
-        const newId = createTab();
+        const newId = createTab(null, win._isIncognito, { windowId: win.id });
         const newTab = tabs.find(t => t.id === newId);
         activeTab.splitWith = newId;
-        newTab.splitWith = activeTabId;
+        newTab.splitWith = activeTab.id;
     } else {
         const otherTab = tabs.find(t => t.id === targetTabId);
         if (otherTab) {
@@ -1537,15 +2117,15 @@ ipcMain.on('split-with-tab', (event, targetTabId) => {
                 if (oldPartner) oldPartner.splitWith = null;
             }
             activeTab.splitWith = otherTab.id;
-            otherTab.splitWith = activeTabId;
-            if (otherTab.view && mainWindow && !isSettingsOpen && !isAIOverlayOpen) {
-                mainWindow.addBrowserView(otherTab.view);
+            otherTab.splitWith = activeTab.id;
+            if (otherTab.view && !isSettingsOpen && !isAIOverlayOpen) {
+                win.addBrowserView(otherTab.view);
             }
         }
     }
-    updateAllTabBounds();
-    updateTabsList();
-    sendToRenderer('split-view-changed', true);
+    updateWindowLayout(win);
+    updateTabsList(win);
+    sendToRenderer('split-view-changed', true, 'main', win.id);
 });
 
 // AI Bridge for extension scripts
@@ -1603,8 +2183,9 @@ ipcMain.handle('storage-set', async (event, items) => {
 
         console.log('[Main] Storage updated and saved to disk');
 
-        // Notify all windows of storage change
-        sendToRenderer('storage-changed', items);
+        // Notify relevant renderers of storage change
+        // Optimization: Broadcast to all views so they remain in sync
+        sendToRenderer('storage-changed', items, 'all');
 
         return { success: true };
     } catch (err) {
@@ -1633,22 +2214,31 @@ ipcMain.on('panic-close-incognito', () => {
     incognitoSession.clearStorageData();
 });
 
-ipcMain.on('set-settings-visibility', (event, visible) => {
+ipcMain.on('open-settings', () => {
+    console.log('[Main] IPC: open-settings request');
+    sendToRenderer('open-settings', null, 'main');
+});
+
+ipcMain.on('set-settings-visibility', async (event, visible) => {
     console.log('[Main] IPC: set-settings-visibility', visible);
     isSettingsOpen = visible;
     const tab = getActiveTab();
-    if (tab && tab.view && mainWindow) {
-        // Same logic as AI overlay: move view off-screen to show settings in main window
-        const bounds = mainWindow.getBounds();
-        const TOOLBAR_HEIGHT = 90;
 
+    if (tab && tab.view && mainWindow) {
         if (visible) {
+            // Capture page first
+            try {
+                const image = await tab.view.webContents.capturePage();
+                const dataUrl = image.toDataURL();
+                sendToRenderer('update-blur-snapshot', dataUrl);
+            } catch (e) { console.error('Capture failed', e); }
+
+            // Hide view (remove)
             mainWindow.removeBrowserView(tab.view);
         } else {
+            // Clear snapshot
+            sendToRenderer('update-blur-snapshot', null);
             mainWindow.addBrowserView(tab.view);
-            // Re-apply bounds just in case
-            const bounds = mainWindow.getBounds();
-            const TOOLBAR_HEIGHT = 90;
             updateAllTabBounds();
         }
     }
@@ -1668,18 +2258,43 @@ ipcMain.handle('get-selection', async () => {
     return '';
 });
 
-ipcMain.on('set-ai-overlay-visible', (event, visible) => {
+ipcMain.on('set-ai-overlay-visible', async (event, visible) => {
     console.log('[Main] IPC: set-ai-overlay-visible', visible);
     isAIOverlayOpen = visible;
     const tab = getActiveTab();
     if (tab && tab.view && mainWindow) {
         if (visible) {
+            try {
+                const image = await tab.view.webContents.capturePage();
+                const dataUrl = image.toDataURL();
+                sendToRenderer('update-blur-snapshot', dataUrl);
+            } catch (e) { console.error('Capture failed', e); }
+
             mainWindow.removeBrowserView(tab.view);
         } else {
+            sendToRenderer('update-blur-snapshot', null);
             mainWindow.addBrowserView(tab.view);
-            // Restore view position
-            const bounds = mainWindow.getBounds();
-            const TOOLBAR_HEIGHT = 90;
+            updateAllTabBounds();
+        }
+    }
+});
+
+ipcMain.on('set-action-bar-visible', async (event, visible) => {
+    console.log('[Main] IPC: set-action-bar-visible', visible);
+    isActionBarOpen = visible;
+    const tab = getActiveTab();
+    if (tab && tab.view && mainWindow) {
+        if (visible) {
+            try {
+                const image = await tab.view.webContents.capturePage();
+                const dataUrl = image.toDataURL();
+                sendToRenderer('update-blur-snapshot', dataUrl);
+            } catch (e) { console.error('Capture failed', e); }
+
+            mainWindow.removeBrowserView(tab.view);
+        } else {
+            sendToRenderer('update-blur-snapshot', null);
+            mainWindow.addBrowserView(tab.view);
             updateAllTabBounds();
         }
     }
@@ -1688,6 +2303,51 @@ ipcMain.on('set-ai-overlay-visible', (event, visible) => {
 // ============================================
 // KEYBOARD SHORTCUTS & MENU
 // ============================================
+
+let isUrlFocus = false;
+ipcMain.on('set-url-focus', async (event, focused) => {
+    console.log('[Main] IPC: set-url-focus', focused);
+    isUrlFocus = focused;
+
+    if (focused) {
+        if (!suggestionsView) {
+            suggestionsView = new BrowserView({
+                webPreferences: {
+                    nodeIntegration: true,
+                    contextIsolation: false
+                }
+            });
+            suggestionsView.webContents.loadFile('suggestions.html');
+            suggestionsView.setBackgroundColor('#00000000');
+        }
+
+        const bounds = mainWindow.getContentBounds();
+        suggestionsView.setBounds({
+            x: Math.round((bounds.width - 300) / 2),
+            y: 40,
+            width: 300,
+            height: 400
+        });
+
+        mainWindow.addBrowserView(suggestionsView);
+        mainWindow.setTopBrowserView(suggestionsView);
+    } else {
+        if (suggestionsView) {
+            mainWindow.removeBrowserView(suggestionsView);
+        }
+    }
+});
+
+ipcMain.on('update-suggestions-data', (event, data) => {
+    if (suggestionsView) {
+        suggestionsView.webContents.send('suggestions-data', data);
+    }
+});
+
+ipcMain.on('navigate-from-suggestions', (event, url) => {
+    navigate(url);
+    if (mainWindow) mainWindow.webContents.send('blur-top-bar');
+});
 
 function setupKeyboardShortcuts() {
     console.log('[Main] Setting up keyboard shortcuts...');
@@ -1718,7 +2378,8 @@ function setupKeyboardShortcuts() {
                     accelerator: 'CmdOrCtrl+W',
                     click: () => {
                         console.log('[Main] Shortcut: Close Tab');
-                        if (activeTabId) closeTab(activeTabId);
+                        const win = BrowserWindow.getFocusedWindow();
+                        if (win && win._activeTabId) closeTab(win._activeTabId);
                     }
                 },
                 { type: 'separator' },
@@ -1897,47 +2558,61 @@ function setupKeyboardShortcuts() {
 // ============================================
 
 ipcMain.on('set-autohide', (event, enabled) => {
-    console.log('[Main] IPC: set-autohide', enabled);
+    console.log(`[Main] IPC: set-autohide ${enabled}`);
     isAutoHideEnabled = enabled;
+    saveStorage({ sidebarAutohide: enabled });
 
-    // Always ensure sidebar view exists
-    if (!sidebarView) {
-        createSidebarView();
-    }
-
-    if (enabled) {
-        isSidebarHovered = false;
-    }
-
-    updateAllTabBounds();
-    updateSidebarBounds();
-    sendToRenderer('sidebar-visibility', { autohide: isAutoHideEnabled, visible: isSidebarHovered });
+    windows.forEach(win => {
+        if (enabled) win._isSidebarHovered = false;
+        updateAllTabBounds(win);
+        updateSidebarBounds(win); // Ensure sidebar bounds are updated for each window
+        sendToRenderer('sidebar-visibility', { autohide: isAutoHideEnabled, visible: win._isSidebarHovered }, 'all', win.id);
+    });
 });
 
 ipcMain.on('set-sidebar-hover', (event, hovered) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+
     if (isAutoHideEnabled) {
-        if (isSidebarHovered !== hovered) {
-            console.log('[Main] IPC: set-sidebar-hover', hovered);
-            isSidebarHovered = hovered;
-            updateSidebarBounds();
-            sendToRenderer('sidebar-visibility', { autohide: isAutoHideEnabled, visible: isSidebarHovered });
+        if (win._isSidebarHovered !== hovered) {
+            console.log(`[Main] IPC: set-sidebar-hover ${hovered} for window ${win.id}`);
+            win._isSidebarHovered = hovered;
+            updateSidebarBounds(win);
+            sendToRenderer('sidebar-visibility', { autohide: isAutoHideEnabled, visible: win._isSidebarHovered }, 'all', win.id);
         }
     }
 });
 
-ipcMain.on('sidebar-trigger', () => {
-    if (isAutoHideEnabled && !isSidebarHovered) {
-        console.log('[Main] IPC: sidebar-trigger (from content)');
-        isSidebarHovered = true;
-        updateSidebarBounds();
-        sendToRenderer('sidebar-visibility', { autohide: isAutoHideEnabled, visible: isSidebarHovered });
+ipcMain.on('sidebar-trigger', (event) => {
+    if (isAutoHideEnabled) {
+        const win = BrowserWindow.fromWebContents(event.sender);
+        if (!win) return;
+
+        if (!win._isSidebarHovered) {
+            // SECURITY/UI FIX: Only allow the leftmost view to trigger the sidebar
+            const tab = tabs.find(t => t.view && t.view.webContents === event.sender);
+            if (tab) {
+                const activeTab = tabs.find(t => t.id === win._activeTabId);
+                if (activeTab && activeTab.splitWith) {
+                    const splitTab = tabs.find(t => t.id === activeTab.splitWith);
+                    if (tab === splitTab) return;
+                }
+            }
+
+            console.log(`[Main] IPC: sidebar-trigger for window ${win.id}`);
+            win._isSidebarHovered = true;
+            updateSidebarBounds(win);
+            sendToRenderer('sidebar-visibility', { autohide: isAutoHideEnabled, visible: win._isSidebarHovered }, 'all', win.id);
+        }
     }
 });
 
-function createSidebarView() {
-    if (sidebarView) return;
+function createSidebarView(win) {
+    if (!win) return;
+    if (win._sidebarView) return;
 
-    sidebarView = new BrowserView({
+    const sidebar = new BrowserView({
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
@@ -1945,47 +2620,63 @@ function createSidebarView() {
         }
     });
 
-    sidebarView.webContents.loadURL(`file://${path.join(__dirname, 'index.html')}?mode=sidebar`);
+    win._sidebarView = sidebar;
+    // Set global sidebarView for compatibility if it's the first main window
+    if (!win._isIncognito && !sidebarView) sidebarView = sidebar;
 
-    sidebarView.webContents.on('did-finish-load', () => {
-        console.log('[Main] Sidebar view loaded');
-        updateTabsList();
+    sidebar.webContents.loadURL(`file://${path.join(__dirname, 'index.html')}?mode=sidebar&windowId=${win.id}`);
+
+    sidebar.webContents.on('did-finish-load', () => {
+        console.log(`[Main] Sidebar view for window ${win.id} loaded`);
+        updateTabsList(win);
     });
 
-    // We don't add it yet, updateSidebarBounds will handle it
-    console.log('[Main] Sidebar view created');
+    console.log(`[Main] Sidebar view created for window ${win.id}`);
 }
 
-function updateSidebarBounds() {
-    if (!mainWindow || !sidebarView) return;
+function updateSidebarBounds(win) {
+    if (!win || !win._sidebarView) return;
 
-    const bounds = mainWindow.getContentBounds();
+    const bounds = win.getContentBounds();
     const SIDEBAR_WIDTH = 240;
     const TOP_BAR_HEIGHT = 40;
 
-    const shouldShow = !isAutoHideEnabled || isSidebarHovered;
+    const shouldShow = !isAutoHideEnabled || win._isSidebarHovered;
 
     if (shouldShow) {
-        if (!mainWindow.getBrowserViews().includes(sidebarView)) {
-            mainWindow.addBrowserView(sidebarView);
+        if (win._sidebarHideTimeout) {
+            clearTimeout(win._sidebarHideTimeout);
+            win._sidebarHideTimeout = null;
         }
 
-        sidebarView.setBounds({
+        if (!win.getBrowserViews().includes(win._sidebarView)) {
+            win.addBrowserView(win._sidebarView);
+        }
+
+        win._sidebarView.setBounds({
             x: 0,
             y: Math.round(TOP_BAR_HEIGHT),
             width: Math.round(SIDEBAR_WIDTH),
             height: Math.round(bounds.height - TOP_BAR_HEIGHT)
         });
 
-        mainWindow.setTopBrowserView(sidebarView);
+        win.setTopBrowserView(win._sidebarView);
     } else {
-        mainWindow.removeBrowserView(sidebarView);
+        // Delay removal to allow CSS animation to finish
+        if (win.getBrowserViews().includes(win._sidebarView) && !win._sidebarHideTimeout) {
+            win._sidebarHideTimeout = setTimeout(() => {
+                if (!win._isSidebarHovered && isAutoHideEnabled) {
+                    win.removeBrowserView(win._sidebarView);
+                }
+                win._sidebarHideTimeout = null;
+            }, 300); // Reduced delay to match faster CSS transition
+        }
     }
 }
 
-function updateAllTabBounds() {
-    if (!mainWindow) return;
-    const bounds = mainWindow.getContentBounds();
+function updateAllTabBounds(win) {
+    if (!win) return;
+    const bounds = win.getContentBounds();
     const SIDEBAR_WIDTH = 240;
     const TOP_BAR_HEIGHT = 40;
 
@@ -2000,44 +2691,52 @@ function updateAllTabBounds() {
     const contentHeight = bounds.height - TOP_BAR_HEIGHT;
 
     // Handle Split View layout
-    if (activeTabId && !isSettingsOpen && !isAIOverlayOpen) {
-        const activeTab = tabs.find(t => t.id === activeTabId);
+    if (win._activeTabId && !isSettingsOpen && !isAIOverlayOpen && !isActionBarOpen) {
+        const activeTab = tabs.find(t => t.id === win._activeTabId);
         if (activeTab && activeTab.splitWith) {
             const splitTab = tabs.find(t => t.id === activeTab.splitWith);
 
             if (activeTab.view && splitTab && splitTab.view) {
-                const halfWidth = Math.floor(contentWidth / 2);
+                const GAP_WIDTH = 4;
+                const totalContentArea = contentWidth - GAP_WIDTH;
+                const leftWidth = Math.floor(totalContentArea * splitRatio);
+                const rightWidth = totalContentArea - leftWidth;
 
                 activeTab.view.setBounds({
                     x: Math.round(xOffset),
                     y: Math.round(TOP_BAR_HEIGHT),
-                    width: halfWidth,
+                    width: leftWidth,
                     height: Math.round(contentHeight)
                 });
+                activeTab.view.webContents.executeJavaScript('window.dispatchEvent(new Event("resize"));').catch(() => { });
 
                 splitTab.view.setBounds({
-                    x: Math.round(xOffset + halfWidth),
+                    x: Math.round(xOffset + leftWidth + GAP_WIDTH),
                     y: Math.round(TOP_BAR_HEIGHT),
-                    width: Math.round(contentWidth - halfWidth),
+                    width: rightWidth,
                     height: Math.round(contentHeight)
                 });
+                splitTab.view.webContents.executeJavaScript('window.dispatchEvent(new Event("resize"));').catch(() => { });
+
+                // Sync split ratio to renderer for resizer placement
+                sendToRenderer('split-ratio-update', splitRatio, 'main', win.id);
 
                 // Re-order views to ensure they are on top
-                const views = mainWindow.getBrowserViews();
-                if (views.includes(activeTab.view)) mainWindow.setTopBrowserView(activeTab.view);
-                if (views.includes(splitTab.view)) mainWindow.setTopBrowserView(splitTab.view);
+                const views = win.getBrowserViews();
+                if (views.includes(activeTab.view)) win.setTopBrowserView(activeTab.view);
+                if (views.includes(splitTab.view)) win.setTopBrowserView(splitTab.view);
 
                 // Always ensure sidebar is on top if it's there
-                if (sidebarView && mainWindow.getBrowserViews().includes(sidebarView)) mainWindow.setTopBrowserView(sidebarView);
+                if (win._sidebarView && win.getBrowserViews().includes(win._sidebarView)) win.setTopBrowserView(win._sidebarView);
 
-                console.log(`[Main] Split View: ${activeTabId} | ${activeTab.splitWith}`);
+                console.log(`[Main] Split View in window ${win.id}: ${win._activeTabId} | ${activeTab.splitWith}`);
                 return;
             }
         }
     }
 
     // Default layout
-    tabs.forEach(tab => {
+    tabs.filter(t => t.windowId === win.id).forEach(tab => {
         if (tab.view) {
             tab.view.setBounds({
                 x: Math.round(xOffset),
@@ -2049,31 +2748,31 @@ function updateAllTabBounds() {
     });
 
     // Ensure sidebar bounds are also updated
-    updateSidebarBounds();
+    updateSidebarBounds(win);
 }
 
 // Cycle through tabs (1 = next, -1 = previous)
 function cycleTab(direction) {
     try {
-        if (tabs.length <= 1) return;
+        const win = BrowserWindow.getFocusedWindow();
+        if (!win) return;
 
-        const currentIndex = tabs.findIndex(t => t.id === activeTabId);
+        const winTabs = tabs.filter(t => t.windowId === win.id);
+        if (winTabs.length <= 1) return;
+
+        const currentIndex = winTabs.findIndex(t => t.id === win._activeTabId);
         if (currentIndex === -1) return;
 
         let newIndex = currentIndex + direction;
-        if (newIndex >= tabs.length) newIndex = 0;
-        if (newIndex < 0) newIndex = tabs.length - 1;
+        if (newIndex >= winTabs.length) newIndex = 0;
+        if (newIndex < 0) newIndex = winTabs.length - 1;
 
-        switchTab(tabs[newIndex].id);
+        switchTab(winTabs[newIndex].id);
     } catch (err) {
         console.error('[Main] Error cycling tabs:', err.message);
     }
 }
 
-// Helper to get the current active tab object
-function getActiveTab() {
-    return tabs.find(t => t.id === activeTabId);
-}
 
 // Send action to the active tab's webContents
 function sendToActiveTab(action, data = {}) {
@@ -2090,22 +2789,63 @@ function sendToActiveTab(action, data = {}) {
     }
 }
 
+// ============================================
+// MEMORY MANAGEMENT (HIBERNATION)
+// ============================================
+
+function hibernateInactiveTabs() {
+    const storage = loadStorage();
+    if (storage.tabHibernation !== true) return;
+
+    const hibernationTimeout = 10 * 60 * 1000; // 10 minutes
+    const now = Date.now();
+
+    tabs.forEach(tab => {
+        // Don't hibernate active tabs in any window, pinned tabs, or already hibernated/dead tabs
+        const isActiveInAnyWin = windows.some(w => w._activeTabId === tab.id);
+        if (isActiveInAnyWin || tab.isPinned || tab.isDead || !tab.view) return;
+
+        const inactiveTime = now - tab.lastUsed;
+        if (inactiveTime > hibernationTimeout) {
+            console.log(`[Hibernation] Suspending tab ${tab.id} (${tab.title}) - Inactive for ${Math.round(inactiveTime / 1000 / 60)}m`);
+
+            // Destroy the view to free memory
+            try {
+                const win = BrowserWindow.fromId(tab.windowId);
+                if (win) {
+                    win.removeBrowserView(tab.view);
+                }
+                tab.view.webContents.destroy();
+                tab.view = null; // Mark as hibernated
+                if (win) updateTabsList(win);
+            } catch (err) {
+                console.error(`[Hibernation] Error suspending tab ${tab.id}:`, err.message);
+            }
+        }
+    });
+}
+
+// Start Hibernation Sentry (every minute)
+setInterval(hibernateInactiveTabs, 60 * 1000);
+
 // Update app.whenReady to include sidebar initialization
 if (app) {
     app.whenReady().then(() => {
+        // Apply session configuration at startup
+        const mainSess = session.fromPartition('persist:main');
+        configurePrivacySession(mainSess, false);
+
+        createWindow();
         console.log('[Main] App ready');
 
         // Load initial settings
         const storage = loadStorage();
         isAutoHideEnabled = storage.sidebarAutohide || false;
-        console.log('[Main] Initial Autohide State:', isAutoHideEnabled);
+        splitRatio = storage.splitRatio || 0.5;
+        console.log('[Main] Initial Autohide State:', isAutoHideEnabled, 'Split Ratio:', splitRatio);
 
         setupKeyboardShortcuts();
         initializePrivacyEngine();
-        createWindow();
-
-        // Create sidebar view immediately
-        createSidebarView();
 
         app.on('activate', () => {
             if (BrowserWindow.getAllWindows().length === 0) {
@@ -2119,28 +2859,17 @@ if (app) {
             console.log('[Main] Restoring session...', savedSettings.savedTabs.length, 'tabs');
             let hasActive = false;
 
-            // Re-create each tab
+            // First, re-create pinned tabs in LAZY mode
             savedSettings.savedTabs.forEach(tData => {
-                // Restore pinned tabs (and others if desired)
                 if (tData.isPinned) {
-                    createTab(tData.url, false, tData);
-                    hasActive = true;
+                    createTab(tData.url, false, { ...tData, lazy: true });
                 }
             });
 
-            // Also restore normal tabs if desired:
-            /*
-            savedSettings.savedTabs.forEach(tData => {
-                if (!tData.isPinned) {
-                     createTab(tData.url, false, tData);
-                     hasActive = true;
-                }
-            });
-            */
-
-            if (!hasActive) {
-                createTab(); // Fallback
-            }
+            // Then create one fresh active tab (or restore the last active one if you prefer)
+            // The requirement says "open a new tab, only keep those pinned tab with their icon there"
+            createTab();
+            hasActive = true;
 
         } else {
             // Create initial tab
@@ -2151,6 +2880,16 @@ if (app) {
         setTimeout(() => {
             autoUpdater.checkForUpdates();
         }, 3000);
+
+        // Register Action Bar shortcut
+        globalShortcut.register('Alt+K', () => {
+            console.log('[Main] Shortcut: Alt+K (Action Bar)');
+            sendToRenderer('toggle-action-bar', null, 'main');
+        });
+    });
+
+    app.on('will-quit', () => {
+        globalShortcut.unregisterAll();
     });
 
     app.on('window-all-closed', () => {
@@ -2169,3 +2908,100 @@ if (app) {
 }
 
 console.log('[Main] Main process script loaded');
+app.on('open-url', (event, url) => {
+    event.preventDefault();
+    console.log('[Main] Protocol URL opened:', url);
+});
+
+// Auth IPCs (Planned for future)
+ipcMain.on('start-google-login', () => {
+    console.log('[Main] Google Login requested (Coming Soon)');
+});
+
+// ============================================
+// LOGO MENU HANDLERS
+// ============================================
+
+ipcMain.on('make-default-browser', () => {
+    console.log('[Main] IPC: make-default-browser');
+    if (!app.isDefaultProtocolClient('pulsar')) {
+        app.setAsDefaultProtocolClient('pulsar');
+    }
+});
+
+ipcMain.on('new-window', () => {
+    console.log('[Main] IPC: new-window');
+    createWindow();
+});
+
+ipcMain.on('print-page', () => {
+    console.log('[Main] IPC: print-page');
+    const tab = getActiveTab();
+    if (tab && tab.view) {
+        tab.view.webContents.print();
+    }
+});
+
+ipcMain.on('close-app', () => {
+    console.log('[Main] IPC: close-app');
+    app.quit();
+});
+
+ipcMain.on('show-logo-menu', (event, pos) => {
+    const template = [
+        {
+            label: 'Make Pulsar default',
+            click: () => {
+                if (!app.isDefaultProtocolClient('pulsar')) {
+                    app.setAsDefaultProtocolClient('pulsar');
+                }
+            }
+        },
+        {
+            label: 'Check for Updates',
+            click: () => {
+                sendToRenderer('open-settings');
+                // We'd need to send another signal to switch to updates tab if desired
+            }
+        },
+        { type: 'separator' },
+        {
+            label: 'New Window',
+            accelerator: 'CmdOrCtrl+N',
+            click: () => createWindow()
+        },
+        {
+            label: 'New Incognito Window',
+            accelerator: 'CmdOrCtrl+Shift+N',
+            click: () => createWindow({ isIncognito: true })
+        },
+        { type: 'separator' },
+        {
+            label: 'Print',
+            accelerator: 'CmdOrCtrl+P',
+            click: () => {
+                const tab = getActiveTab();
+                if (tab && tab.view) tab.view.webContents.print();
+            }
+        },
+        {
+            label: 'GitHub Repository',
+            click: () => {
+                const tab = getActiveTab();
+                if (tab) navigate('https://github.com/Hootsworth/Pulsar');
+            }
+        },
+        { type: 'separator' },
+        {
+            label: 'Close Pulsar',
+            role: 'quit'
+        }
+    ];
+
+    const menu = Menu.buildFromTemplate(template);
+    menu.popup({
+        window: BrowserWindow.fromWebContents(event.sender),
+        x: pos.x,
+        y: pos.y
+    });
+});

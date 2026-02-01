@@ -1,36 +1,44 @@
 :root {
     --bg-primary: #050505;
     --bg-toolbar: rgba(10, 10, 10, 0.95);
+    --bg-glass: rgba(15, 15, 18, 0.88);
+    --sidebar-bg: rgba(8, 8, 10, 0.98);
     --text-primary: #ffffff;
     --text-secondary: rgba(255, 255, 255, 0.5);
     --text-muted: rgba(255, 255, 255, 0.4);
     --border-glass: rgba(255, 255, 255, 0.08);
     --border-color: rgba(255, 255, 255, 0.1);
-    --input-bg: rgba(255, 255, 255, 0.06);
-    --input-focus: rgba(255, 255, 255, 0.1);
-    --tab-inactive: rgba(255, 255, 255, 0.03);
+    --input-bg: rgba(255, 255, 255, 0.05);
+    --input-focus: rgba(255, 255, 255, 0.08);
+    --tab-inactive: rgba(255, 255, 255, 0.02);
     --tab-active: rgba(255, 255, 255, 0.12);
     --hover-bg: rgba(255, 255, 255, 0.08);
     --accent-glow: 0 0 15px rgba(255, 255, 255, 0.1);
     --accent-primary: #007aff;
     --accent-primary-rgb: 0, 122, 255;
+    --modal-shadow: 0 50px 120px rgba(0, 0, 0, 0.6);
+    --blur-strength: 40px;
 }
 
 [data-theme="light"] {
     --bg-primary: #f5f5f7;
-    --bg-toolbar: rgba(255, 255, 255, 0.9);
+    --bg-toolbar: rgba(245, 245, 247, 0.9);
+    --bg-glass: rgba(255, 255, 255, 0.92);
+    --sidebar-bg: rgba(252, 252, 254, 0.98);
     --text-primary: #1d1d1f;
     --text-secondary: rgba(0, 0, 0, 0.5);
     --text-muted: rgba(0, 0, 0, 0.4);
-    --border-glass: rgba(0, 0, 0, 0.08);
-    --border-color: rgba(0, 0, 0, 0.1);
+    --border-glass: rgba(0, 0, 0, 0.06);
+    --border-color: rgba(0, 0, 0, 0.08);
     --input-bg: rgba(0, 0, 0, 0.03);
     --input-focus: rgba(0, 0, 0, 0.05);
     --tab-inactive: rgba(0, 0, 0, 0.02);
-    --tab-active: rgba(0, 0, 0, 0.08);
+    --tab-active: rgba(0, 0, 0, 0.06);
     --hover-bg: rgba(0, 0, 0, 0.04);
     --accent-glow: 0 0 15px rgba(0, 122, 255, 0.1);
     --accent-primary-rgb: 0, 122, 255;
+    --modal-shadow: 0 40px 100px rgba(0, 0, 0, 0.1);
+    --blur-strength: 30px;
 }
 
 body {
@@ -73,21 +81,27 @@ body.mode-sidebar .sidebar {
 .sidebar {
     width: 240px;
     height: calc(100vh - 40px);
-    background: var(--bg-toolbar);
+    background: var(--sidebar-bg);
+    backdrop-filter: blur(var(--blur-strength));
+    -webkit-backdrop-filter: blur(var(--blur-strength));
     border-right: 1px solid var(--border-glass);
     display: flex;
     flex-direction: column;
     padding: 12px;
     box-sizing: border-box;
-    z-index: 100;
-    transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1),
-        width 0.6s cubic-bezier(0.16, 1, 0.3, 1),
-        opacity 0.4s ease;
+    z-index: 12000;
+    /* Ensure sidebar is ABOVE the backdrop (10000) */
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+        width 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+        opacity 0.2s ease,
+        background 0.3s ease;
     flex-shrink: 0;
     position: absolute;
     left: 0;
     top: 40px;
-    box-shadow: 20px 0 50px rgba(0, 0, 0, 0.3);
+    will-change: transform, width, opacity;
+    transform: translateZ(0);
+    box-shadow: 20px 0 50px rgba(0, 0, 0, 0.2);
 }
 
 @keyframes springIn {
@@ -109,7 +123,8 @@ body.mode-sidebar .sidebar {
 
 .sidebar.autohide {
     transform: translateX(-100%);
-    box-shadow: 10px 0 30px rgba(0, 0, 0, 0.5);
+    box-shadow: none;
+    /* Shadow removed when hidden */
 }
 
 .sidebar.autohide.visible {
@@ -125,6 +140,66 @@ body.mode-sidebar .sidebar {
     align-items: center;
     padding: 4px 8px;
     margin-bottom: 12px;
+}
+
+/* --- Blur Backdrop --- */
+.blur-backdrop {
+    position: absolute;
+    top: 40px;
+    /* Below top bar */
+    left: 0;
+    width: 100vw;
+    height: calc(100vh - 40px);
+    background-size: cover;
+    background-position: top center;
+    /* initial state: unblurred to allow transition? 
+       No, we want to fade IN the blurred image. 
+       Actually, if we just fade opacity 0->1 of a blurred image, it looks like a blurred image appearing.
+       To make it look like the PAGE is blurring, we ideally transition the blur amount.
+       But we can't do that with a static snapshot unless we snapshot unblurred and calculate filter.
+       BUT, fading in a blurred screenshot over the real view (which is hidden instantly) creates a "cut" then "fade in".
+       Since we hide the real view instantly, we have to show the snapshot instantly.
+       Logic check:
+       1. Capture page.
+       2. Send to renderer (invisible yet).
+       3. Main hides View.
+       4. Renderer shows Snapshot.
+       
+       If distinct steps: View vanishes -> White background -> Blurred image fades in. That flashes.
+       
+       Better approach:
+       Show snapshot (opacity 0->1).
+       BUT the view is BEHIND it.
+       If we keep the view visible for a moment, we can fade the blur ON TOP of it.
+       Then hide the view.
+       
+       Current Main.js logic:
+       It sends snapshot -> removes view immediately.
+       
+       Refined CSS strategy for "Soft Blur":
+       Use a slightly slower, smoother fade.
+       Add saturation for richness.
+       Maybe scale slightly.
+    */
+    filter: blur(30px) saturate(1.8) brightness(0.8);
+    z-index: 10000;
+    opacity: 0;
+    transition: opacity 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+    pointer-events: none;
+    will-change: opacity;
+}
+
+.blur-backdrop.active {
+    opacity: 1;
+}
+
+.blur-backdrop.active.clean {
+    filter: brightness(0.9);
+    /* Slight dim to pop UI, but NO BLUR */
+    transform: none;
+    /* Force no scale immediately */
+    transition: opacity 0.1s ease;
+    /* Instant snap, no transform drift */
 }
 
 .sidebar-label {
@@ -163,7 +238,144 @@ body.mode-sidebar .sidebar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    z-index: 11000;
+    z-index: 20000;
+}
+
+.top-bar-center {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 300px;
+    /* Small initial width */
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    /* Let clicks pass unless on input */
+}
+
+.url-bar-top-container {
+    width: 100%;
+    height: 28px;
+    pointer-events: auto;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    -webkit-app-region: no-drag;
+    position: relative;
+    /* Context for dropdown */
+}
+
+/* Autocomplete Dropdown */
+.url-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 6px;
+    background: var(--bg-glass);
+    backdrop-filter: blur(var(--blur-strength));
+    -webkit-backdrop-filter: blur(var(--blur-strength));
+    border: 1px solid var(--border-glass);
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    overflow: hidden;
+    z-index: 12000;
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    padding: 6px;
+}
+
+.url-dropdown.active {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+}
+
+.url-dropdown.hidden {
+    display: none;
+}
+
+.url-suggestion {
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
+}
+
+.url-suggestion:hover,
+.url-suggestion.selected {
+    background: var(--hover-bg);
+}
+
+.url-suggestion-icon {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    opacity: 0.7;
+    object-fit: contain;
+}
+
+.url-suggestion-text {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex: 1;
+}
+
+.url-suggestion-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 500;
+}
+
+.url-suggestion-url {
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.url-bar-top {
+    width: 100%;
+    height: 100%;
+    background: var(--input-bg);
+    border: 1px solid var(--border-glass);
+    border-radius: 8px;
+    padding: 0 12px;
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
+    font-size: 13px;
+    text-align: center;
+    outline: none;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+
+.url-bar-top:focus {
+    background: var(--input-focus);
+    border-color: var(--text-muted);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    text-align: left;
+}
+
+/* Expand on focus */
+.top-bar-center:focus-within {
+    width: 500px;
+    max-width: 60vw;
 }
 
 .top-bar-left,
@@ -173,12 +385,106 @@ body.mode-sidebar .sidebar {
     height: 100%;
 }
 
-.app-logo {
+.logo-dropdown-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    -webkit-app-region: no-drag;
+}
+
+.app-logo-btn {
     font-family: "Space Mono", monospace;
     font-weight: 700;
     font-size: 1.2rem;
     padding: 0 16px;
     color: var(--accent-primary, #007aff);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    outline: none;
+}
+
+.app-logo-btn:hover {
+    transform: scale(1.1);
+}
+
+.app-logo-btn:active {
+    transform: scale(0.95);
+}
+
+.logo-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 8px;
+    width: 240px;
+    background: var(--bg-glass);
+    backdrop-filter: blur(var(--blur-strength));
+    -webkit-backdrop-filter: blur(var(--blur-strength));
+    border: 1px solid var(--border-glass);
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    padding: 6px;
+    z-index: 13000;
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+    pointer-events: none;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    flex-direction: column;
+}
+
+.logo-dropdown-menu.active {
+    opacity: 1;
+    transform: translateY(6px) scale(1);
+    pointer-events: auto;
+}
+
+.menu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: left;
+    width: 100%;
+}
+
+.menu-item:hover {
+    background: var(--hover-bg);
+    transform: translateX(4px);
+}
+
+.menu-item.danger {
+    color: #ff453a;
+}
+
+.menu-item.danger:hover {
+    background: rgba(255, 69, 58, 0.15);
+}
+
+.menu-icon {
+    font-size: 16px;
+    width: 20px;
+    display: flex;
+    justify-content: center;
+}
+
+.menu-divider {
+    height: 1px;
+    background: var(--border-glass);
+    margin: 6px;
 }
 
 .top-bar .nav-controls {
@@ -192,6 +498,22 @@ body.mode-sidebar .sidebar {
     width: 28px;
     height: 28px;
     padding: 6px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--text-primary);
+    opacity: 0.7;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.top-bar .nav-btn#btn-autohide-top.active {
+    background: var(--tab-active);
+    color: var(--accent-primary);
+    opacity: 1;
 }
 
 .top-bar-settings-btn {
@@ -234,7 +556,7 @@ body.mode-sidebar .sidebar {
     left: 0;
     top: 40px;
     /* Below top bar */
-    width: 20px;
+    width: 8px;
     height: calc(100vh - 40px);
     z-index: 9999;
     /* Ensure top-most to catch hover */
@@ -260,7 +582,7 @@ body.mode-sidebar .sidebar {
 
 .sidebar-settings-btn:hover {
     background: var(--hover-bg);
-    color: white;
+    color: var(--text-primary);
 }
 
 .sidebar-settings-btn svg {
@@ -834,6 +1156,178 @@ body.mode-sidebar .sidebar {
     color: #007AFF;
 }
 
+/* --- Settings Layout (macOS Style) --- */
+.settings-layout {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+.settings-sidebar {
+    width: 220px;
+    background: rgba(0, 0, 0, 0.2);
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+    display: flex;
+    flex-direction: column;
+    padding: 20px 12px;
+}
+
+.settings-sidebar-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 12px 20px 12px;
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+}
+
+.sidebar-logo-small {
+    width: 24px;
+    height: 24px;
+    background: var(--accent-primary);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    color: white;
+    font-weight: 800;
+}
+
+.settings-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.settings-tab-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    border-radius: 10px;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 100%;
+    text-align: left;
+}
+
+.settings-tab-btn:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+}
+
+.settings-tab-btn.active {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+}
+
+.tab-icon-box {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    flex-shrink: 0;
+}
+
+.settings-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: rgba(255, 255, 255, 0.01);
+}
+
+.settings-main-header {
+    height: 64px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 32px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.settings-main-header h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+.settings-panes {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 32px;
+}
+
+.settings-pane {
+    display: none;
+    animation: fadeIn 0.3s ease;
+}
+
+.settings-pane.active {
+    display: block;
+}
+
+.pane-group {
+    margin-bottom: 32px;
+}
+
+.pane-group h3 {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 12px;
+    opacity: 0.5;
+}
+
+/* Glass Panel for sections */
+.glass-panel {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 16px;
+    padding: 20px;
+}
+
+.update-card {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+}
+
+.update-icon-large {
+    width: 64px;
+    height: 64px;
+    background: linear-gradient(135deg, var(--accent-primary), #5856d6);
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.update-details h4 {
+    margin: 0 0 4px 0;
+    font-size: 1rem;
+}
+
+.update-details span {
+    font-size: 0.85rem;
+    opacity: 0.6;
+}
+
 .intents-search-body {
     flex: 1;
     overflow-y: auto;
@@ -1218,16 +1712,19 @@ body.mode-sidebar .sidebar {
 
 /* LYRICS MODAL */
 .modal-lyrics {
-    background: rgba(20, 20, 22, 0.95);
+    background: var(--bg-glass);
     width: 100%;
-    max-width: 550px;
-    height: 75vh;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 24px;
+    max-width: 600px;
+    height: 80vh;
+    border: 1px solid var(--border-glass);
+    border-radius: 32px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    animation: modalSlideUp 0.4s var(--ease-comfort);
+    backdrop-filter: blur(var(--blur-strength));
+    -webkit-backdrop-filter: blur(var(--blur-strength));
+    box-shadow: var(--modal-shadow);
+    animation: modalScaleIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .lyrics-header-info {
@@ -1238,7 +1735,7 @@ body.mode-sidebar .sidebar {
 .lyrics-header-info h2 {
     font-size: 1.5rem;
     margin: 0;
-    color: white;
+    color: var(--text-primary);
 }
 
 .lyrics-header-info span {
@@ -1489,7 +1986,7 @@ body.mode-sidebar .sidebar {
 
 .nav-btn:hover {
     background: var(--hover-bg);
-    color: white;
+    color: var(--text-primary);
 }
 
 #btn-intent-top:hover {
@@ -1558,7 +2055,7 @@ body.mode-sidebar .sidebar {
 
 #btn-intent:hover {
     background: var(--hover-bg);
-    color: white;
+    color: var(--text-primary);
     transform: scale(1.1);
 }
 
@@ -1614,18 +2111,18 @@ body.mode-sidebar .sidebar {
     width: 90%;
     max-width: 640px;
     max-height: 85vh;
-    background: rgba(15, 15, 15, 0.7);
-    backdrop-filter: blur(40px) saturate(200%);
-    -webkit-backdrop-filter: blur(40px) saturate(200%);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--bg-glass);
+    backdrop-filter: blur(var(--blur-strength)) saturate(180%);
+    -webkit-backdrop-filter: blur(var(--blur-strength)) saturate(180%);
+    border: 1px solid var(--border-glass);
     border-radius: 28px;
     padding: 32px;
-    box-shadow: 0 50px 100px rgba(0, 0, 0, 0.5),
+    box-shadow: var(--modal-shadow),
         inset 0 0 0 1px rgba(255, 255, 255, 0.05);
     transform: scale(0.95) translateY(20px);
     transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
     overflow-y: auto;
-    scrollbar-width: thin;
+    scrollbar-width: none;
 }
 
 .go-overlay.active .go-container {
@@ -1661,7 +2158,8 @@ body.mode-sidebar .sidebar {
     font-family: 'Inter', sans-serif;
     font-size: 1.15rem;
     line-height: 1.65;
-    color: rgba(255, 255, 255, 0.95);
+    color: var(--text-primary);
+    opacity: 0.95;
     margin-top: 8px;
 }
 
@@ -1669,7 +2167,7 @@ body.mode-sidebar .sidebar {
     display: flex;
     align-items: center;
     gap: 12px;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--text-secondary);
     font-size: 0.95rem;
     padding: 20px 0;
 }
@@ -1689,8 +2187,8 @@ body.mode-sidebar .sidebar {
 }
 
 .go-close:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: white;
+    background: var(--hover-bg);
+    color: var(--text-primary);
 }
 
 .go-close svg {
@@ -1700,14 +2198,16 @@ body.mode-sidebar .sidebar {
 
 .go-query {
     font-size: 1.5rem;
-    font-weight: 500;
-    color: white;
+    font-weight: 600;
+    color: var(--text-primary);
     margin-bottom: 20px;
-    line-height: 1.4;
+    line-height: 1.3;
+    letter-spacing: -0.01em;
 }
 
 .go-content {
-    color: rgba(255, 255, 255, 0.8);
+    color: var(--text-primary);
+    opacity: 0.95;
     font-size: 0.95rem;
     line-height: 1.7;
 }
@@ -1755,15 +2255,17 @@ body.mode-sidebar .sidebar {
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--text-muted);
     margin-bottom: 12px;
+    font-weight: 700;
 }
 
 .go-link {
     display: block;
     padding: 10px 12px;
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 8px;
+    background: var(--tab-inactive);
+    border: 1px solid var(--border-glass);
+    border-radius: 12px;
     margin-bottom: 8px;
     text-decoration: none;
     transition: background 0.2s;
@@ -1796,30 +2298,43 @@ body.mode-sidebar .sidebar {
     margin-top: 10px;
 }
 
+/* --- Universal MacOS Close Button (Red Circle) --- */
 .close-btn-mac {
-    width: 32px;
-    height: 32px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: var(--text-muted);
+    background: #FF5F57;
+    border: 1px solid rgba(0, 0, 0, 0.1);
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 0;
     cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
 }
 
 .close-btn-mac:hover {
-    background: #FF5F57;
-    border-color: #E0443E;
-    color: white;
-    transform: rotate(90deg);
+    background: #FF3B30;
+    transform: scale(1.1) rotate(90deg);
+    box-shadow: 0 4px 12px rgba(255, 59, 48, 0.3);
 }
 
 .close-btn-mac svg {
-    width: 16px;
-    height: 16px;
+    width: 12px;
+    height: 12px;
+    stroke: #3E0000;
+    stroke-width: 3.5px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.close-btn-mac:hover svg {
+    opacity: 1;
 }
 
 
@@ -1833,32 +2348,32 @@ body.mode-sidebar .sidebar {
     height: 20px;
 }
 
-.settings-modal-container {
-    max-width: 500px;
-}
-
 /* ===== PORTED SETTINGS MODAL STYLES (From Extension) ===== */
 
 /* Modal Content Box */
 .modal-content {
-    background: rgba(15, 15, 18, 0.85);
-    backdrop-filter: blur(40px) saturate(210%);
-    -webkit-backdrop-filter: blur(40px) saturate(210%);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 28px;
-    box-shadow: 0 40px 120px rgba(0, 0, 0, 0.6),
-        inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-    /* Interior highlight */
-    width: 90%;
-    max-width: 560px;
+    background: var(--bg-glass);
+    backdrop-filter: blur(var(--blur-strength)) saturate(180%);
+    -webkit-backdrop-filter: blur(var(--blur-strength)) saturate(180%);
+    border: 1px solid var(--border-glass);
+    border-radius: 20px;
+    width: 600px;
     max-height: 85vh;
-    position: relative;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    box-shadow: var(--modal-shadow), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    position: relative;
     transform: translateY(20px) scale(0.95);
+    opacity: 0;
     transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
     animation: modalSlideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.settings-modal-wide {
+    width: 860px;
+    height: 620px;
+    max-height: 90vh;
 }
 
 /* Glass Noise Texture Support */
@@ -2218,27 +2733,7 @@ body.mode-sidebar .sidebar {
     transform: translateY(-1px);
 }
 
-/* Close Button Override */
-.close-btn-mac {
-    width: 30px;
-    height: 30px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.close-btn-mac:hover {
-    background: #FF5F57;
-    color: #4a0002;
-    transform: rotate(90deg);
-    box-shadow: 0 0 10px rgba(255, 95, 87, 0.4);
-}
+/* MacOS Floating Scrollbar Fix */
 
 /* MacOS Floating Scrollbar Fix */
 ::-webkit-scrollbar {
@@ -2266,20 +2761,19 @@ body.mode-sidebar .sidebar {
 .archives-container {
     position: absolute;
     top: 130px;
-    /* Below address bar */
     left: 12px;
     right: 12px;
     bottom: 60px;
-    /* Above footer */
-    background: var(--bg-toolbar);
+    background: var(--bg-glass);
     border: 1px solid var(--border-glass);
-    border-radius: 12px;
+    border-radius: 16px;
     display: flex;
     flex-direction: column;
     z-index: 150;
-    backdrop-filter: blur(20px);
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(var(--blur-strength));
+    -webkit-backdrop-filter: blur(var(--blur-strength));
+    box-shadow: var(--modal-shadow);
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     overflow: hidden;
 }
 
@@ -2315,7 +2809,7 @@ body.mode-sidebar .sidebar {
 
 .archives-close:hover {
     background: var(--hover-bg);
-    color: white;
+    color: var(--text-primary);
 }
 
 .archives-list {
@@ -2481,207 +2975,11 @@ body.mode-sidebar .sidebar {
     max-width: 320px;
     margin-top: 50px;
     margin-right: 20px;
-    background: rgba(15, 15, 15, 0.95);
-    backdrop-filter: blur(40px) saturate(200%);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-    transform: scale(0.95) translateY(-10px);
-}
-
-#split-picker-overlay.active .modal-content {
-    transform: scale(1) translateY(0);
-}
-
-.split-picker-search-container {
-    margin-bottom: 16px;
-}
-
-.split-picker-list {
-    max-height: 300px;
-    overflow-y: auto;
-    margin-bottom: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.split-picker-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
-    border-radius: 12px;
-    cursor: pointer;
-    background: rgba(255, 255, 255, 0.03);
-    transition: all 0.2s ease;
-}
-
-.split-picker-item:hover {
-    background: rgba(255, 255, 255, 0.08);
-}
-
-.split-picker-item .item-favicon {
-    width: 16px;
-    height: 16px;
-    border-radius: 4px;
-}
-
-.split-picker-item .item-title {
-    font-size: 0.95rem;
-    color: rgba(255, 255, 255, 0.9);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    flex: 1;
-}
-
-/* --- Staggered Entrance for Tabs --- */
-.tab {
-    animation: tabEntrance 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-@keyframes tabEntrance {
-    from {
-        opacity: 0;
-        transform: translateX(-10px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateX(0);
-    }
-}
-
-.tabs-container> :nth-child(1) {
-    animation-delay: 0.05s;
-}
-
-.tabs-container> :nth-child(2) {
-    animation-delay: 0.10s;
-}
-
-.tabs-container> :nth-child(3) {
-    animation-delay: 0.15s;
-}
-
-.tabs-container> :nth-child(4) {
-    animation-delay: 0.20s;
-}
-
-.tabs-container> :nth-child(5) {
-    animation-delay: 0.25s;
-}
-
-/* Modal Entrance Animation */
-@keyframes tabEntrance {
-    from {
-        opacity: 0;
-        transform: translateX(-10px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateX(0);
-    }
-}
-
-.split-indicator {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: 4px;
-    background: rgba(255, 255, 255, 0.1);
-    color: white;
-    margin-right: -4px;
-}
-
-.tab.is-split .tab-title {
-    margin-left: 8px;
-    font-weight: 500;
-}
-
-.split-picker-footer {
-    display: flex;
-    justify-content: flex-end;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    padding-top: 16px;
-}
-
-.split-picker-list::-webkit-scrollbar {
-    width: 6px;
-}
-
-.split-picker-list::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
-}
-
-
-.archive-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px;
-    border-radius: 10px;
-    cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    animation: fadeIn 0.4s ease both;
-    background: transparent;
-    border: 1px solid transparent;
-}
-
-.archive-item:hover {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: var(--border-glass);
-    transform: translateX(4px);
-}
-
-.archive-favicon-wrapper {
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 8px;
-    flex-shrink: 0;
-    transition: all 0.2s;
-}
-
-.archive-item:hover .archive-favicon-wrapper {
-    background: rgba(255, 255, 255, 0.08);
-    transform: scale(1.05);
-}
-
-.sidebar-footer-right {
-    display: flex;
-    gap: 4px;
-}
-
-/* Split Picker Popup Style */
-#split-picker-overlay {
-    background: transparent;
-    backdrop-filter: none;
-    align-items: flex-start;
-    justify-content: flex-end;
-    pointer-events: none;
-}
-
-#split-picker-overlay.active {
-    pointer-events: auto;
-}
-
-#split-picker-overlay .modal-content {
-    width: 320px;
-    max-width: 320px;
-    margin-top: 50px;
-    margin-right: 20px;
-    background: rgba(15, 15, 15, 0.95);
-    backdrop-filter: blur(40px) saturate(200%);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    background: var(--bg-glass);
+    backdrop-filter: blur(var(--blur-strength)) saturate(180%);
+    -webkit-backdrop-filter: blur(var(--blur-strength)) saturate(180%);
+    border: 1px solid var(--border-glass);
+    box-shadow: var(--modal-shadow), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
     transform: scale(0.95) translateY(-10px);
 }
 
@@ -2887,4 +3185,476 @@ body.mode-sidebar .sidebar {
         opacity: 1;
         transform: translateY(0);
     }
+}
+
+/* Split Resizer */
+.split-resizer {
+    position: absolute;
+    top: 0;
+    left: 240px;
+    width: 8px;
+    height: 100vh;
+    z-index: 1000;
+    background: transparent;
+    transition: background 0.2s, left 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+    cursor: col-resize;
+}
+
+.split-resizer:hover,
+.split-resizer.dragging {
+    background: rgba(var(--accent-primary-rgb), 0.1);
+}
+
+.split-resizer::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--border-glass);
+    transition: background 0.2s, transform 0.2s;
+    opacity: 0.5;
+}
+
+.split-resizer:hover::after,
+.split-resizer.dragging::after {
+    background: var(--accent-primary);
+    transform: scaleX(1.5);
+    opacity: 1;
+}
+
+.split-resizer.hidden {
+    display: none !important;
+}
+
+/* ============================================ */
+/* WALLPAPER & PREMIUM BACKGROUNDS              */
+/* ============================================ */
+
+.wallpaper {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    z-index: -10;
+    transition: opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+    opacity: 0;
+    pointer-events: none;
+}
+
+.wallpaper.active {
+    opacity: 1;
+}
+
+.wallpaper.minimal-gradient {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+}
+
+.wallpaper.minimal-mesh {
+    background:
+        radial-gradient(at 40% 20%, rgba(45, 45, 65, 0.8) 0px, transparent 50%),
+        radial-gradient(at 80% 0%, rgba(35, 40, 55, 0.6) 0px, transparent 50%),
+        radial-gradient(at 0% 50%, rgba(40, 50, 60, 0.5) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(30, 35, 50, 0.4) 0px, transparent 50%),
+        #141420;
+}
+
+.wallpaper::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle at center, transparent 0%, rgba(0, 0, 0, 0.4) 100%);
+    pointer-events: none;
+}
+
+/* Background Options in Settings */
+.bg-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 12px;
+    margin-top: 15px;
+}
+
+.bg-btn {
+    aspect-ratio: 16/10;
+    border-radius: 10px;
+    border: 1px solid var(--border-glass);
+    overflow: hidden;
+    padding: 0;
+    background: var(--bg-tertiary);
+    transition: all 0.3s ease;
+    cursor: pointer;
+    position: relative;
+}
+
+.bg-btn img,
+.bg-preview {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.5s ease;
+}
+
+.bg-preview.none {
+    background: #111;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.bg-preview.gradient-preview {
+    background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+}
+
+.bg-preview.mesh-preview {
+    background: radial-gradient(at 30% 30%, #2d2d41 0%, #141420 100%);
+}
+
+.bg-btn:hover {
+    border-color: var(--accent-primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.bg-btn:hover img {
+    transform: scale(1.1);
+}
+
+.bg-btn.active {
+    border-color: var(--accent-primary);
+    border-width: 2px;
+    box-shadow: 0 0 0 2px rgba(var(--accent-primary-rgb), 0.2);
+}
+
+/* Glass Enhancement when Wallpaper is active */
+body.has-wallpaper .intents-search-modal .modal-content {
+    background: rgba(15, 15, 15, 0.7) !important;
+    backdrop-filter: blur(30px) saturate(180%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+body.has-wallpaper .app-container {
+    background: transparent !important;
+}
+
+/* ============================================ */
+/* ULTRA-PREMIUM CONTEXTUAL ACTION BAR          */
+/* ============================================ */
+
+.action-bar-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(32px) saturate(200%);
+    -webkit-backdrop-filter: blur(32px) saturate(200%);
+    z-index: 10000;
+    display: flex;
+    justify-content: center;
+    padding-top: 18vh;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.action-bar-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.action-bar-container {
+    width: 720px;
+    max-width: 92vw;
+    background: #121212;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 28px;
+    box-shadow: 0 40px 80px rgba(0, 0, 0, 0.7);
+    overflow: hidden;
+    transform: translateY(-30px) scale(0.97);
+    transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+        width 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+        height 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+}
+
+.action-bar-border {
+    position: absolute;
+    inset: -1px;
+    border-radius: 28px;
+    background: linear-gradient(90deg, #FF5F6D, #FFC371, #FFD700, #4CD964, #5AC8FA, #007AFF, #A259FF);
+    background-size: 300% 300%;
+    animation: moveGradient 6s linear infinite;
+    z-index: 0;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+    -webkit-mask:
+        linear-gradient(#fff 0 0) content-box,
+        linear-gradient(#fff 0 0);
+    mask:
+        linear-gradient(#fff 0 0) content-box,
+        linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    padding: 1.5px;
+}
+
+.action-bar-overlay.active .action-bar-border {
+    opacity: 0.6;
+}
+
+.action-bar-status {
+    font-size: 0.85rem;
+    color: var(--accent-primary);
+    font-family: 'Space Mono', monospace;
+    margin-left: auto;
+    opacity: 0.8;
+    animation: pulse 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 0.4;
+    }
+
+    50% {
+        opacity: 1;
+    }
+}
+
+.action-bar-ai-result {
+    padding: 24px 34px;
+    font-size: 1.1rem;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.9);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    max-height: 400px;
+    overflow-y: auto;
+    background: rgba(255, 255, 255, 0.01);
+    animation: smooshIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes smooshIn {
+    0% {
+        opacity: 0;
+        transform: scale(0.95) translateY(10px);
+    }
+
+    100% {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.action-bar-overlay.active .action-bar-container {
+    transform: translateY(0) scale(1);
+}
+
+.action-bar-input-wrapper {
+    position: relative;
+    padding: 28px 34px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.action-bar-hint-icon {
+    color: var(--accent-primary);
+    filter: drop-shadow(0 0 8px rgba(var(--accent-primary-rgb), 0.4));
+    display: flex;
+    align-items: center;
+    opacity: 0.9;
+}
+
+#action-bar-input {
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: #ffffff;
+    font-size: 1.5rem;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    outline: none;
+    font-weight: 300;
+    letter-spacing: -0.02em;
+    z-index: 2;
+}
+
+#action-bar-input::placeholder {
+    color: rgba(255, 255, 255, 0.2);
+}
+
+.action-bar-ghost {
+    position: absolute;
+    left: 78px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: rgba(255, 255, 255, 0.12);
+    font-size: 1.5rem;
+    pointer-events: none;
+    z-index: 1;
+    font-weight: 300;
+    letter-spacing: -0.02em;
+}
+
+.action-bar-results {
+    max-height: 520px;
+    overflow-y: auto;
+    padding: 12px 0;
+}
+
+.action-bar-results::-webkit-scrollbar {
+    width: 5px;
+}
+
+.action-bar-results::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+}
+
+.section-label {
+    padding: 18px 34px 10px;
+    font-size: 0.72rem;
+    color: rgba(255, 255, 255, 0.25);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 700;
+}
+
+.action-bar-item {
+    padding: 14px 34px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    position: relative;
+}
+
+.action-bar-item::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: var(--accent-primary);
+    transform: scaleY(0);
+    transition: transform 0.3s ease;
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 4px;
+}
+
+.action-bar-item:hover,
+.action-bar-item.selected {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.action-bar-item.selected::before {
+    transform: scaleY(0.7);
+}
+
+.action-bar-item.selected {
+    background: linear-gradient(90deg, rgba(var(--accent-primary-rgb), 0.08), transparent);
+}
+
+.action-icon-box {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.5);
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.action-bar-item.selected .action-icon-box {
+    background: var(--accent-primary);
+    color: #000;
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(var(--accent-primary-rgb), 0.3);
+}
+
+.action-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.action-title {
+    font-size: 1.05rem;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.action-desc {
+    font-size: 0.82rem;
+    color: rgba(255, 255, 255, 0.35);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 480px;
+}
+
+.action-shortcut {
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.15);
+    font-family: 'JetBrains Mono', monospace;
+    padding: 3px 7px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.action-bar-footer {
+    padding: 14px 34px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.footer-hint {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.68rem;
+    color: rgba(255, 255, 255, 0.25);
+    font-weight: 500;
+}
+
+.kbd-hint {
+    padding: 2px 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    border-radius: 4px;
+    color: rgba(255, 255, 255, 0.5);
+    font-family: inherit;
+    font-weight: 600;
+    text-transform: uppercase;
 }

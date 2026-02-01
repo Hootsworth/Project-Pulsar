@@ -146,11 +146,18 @@ function handleRuntimeMessage(msg, callback) {
                 }
             });
         });
+    } else if (msg.action === 'getTrackerStats') {
+        ipcInvoke('get-tracker-stats').then(stats => {
+            if (callback) callback(stats);
+        });
     } else if (msg.action === 'openInIntentMode') {
         ipcSend('navigate', msg.url);
         setTimeout(() => {
             ipcSend('extension-action', { action: 'activateIntentMode', intent: 'read', scrollTop: msg.scrollTop });
         }, 1000);
+    } else if (msg.action === 'openSettings') {
+        ipcSend('open-settings');
+        if (callback) callback({ success: true });
     } else {
         console.warn('[ContentPreload] Unhandled action:', msg.action);
         if (callback) callback({ error: 'Action not implemented' });
@@ -162,9 +169,10 @@ try {
     contextBridge.exposeInMainWorld('browser', {
         aiSearch: (query, settings) => ipcInvoke('ai-search', { query, settings }),
         navigate: (url) => ipcSend('navigate', url),
-        createTab: () => ipcSend('tab-create'),
+        createTab: (url) => ipcSend('tab-create', url),
         storageGet: (keys) => ipcInvoke('storage-get', keys),
         storageSet: (items) => ipcInvoke('storage-set', items),
+        onStorageChanged: (callback) => ipcOn('storage-changed', callback),
         askAI: (prompt, settings, context) => ipcInvoke('ask-ai', prompt, settings, context),
         openSettings: () => ipcSend('open-settings'),
         onSidebarVisibility: (callback) => ipcOn('sidebar-visibility', callback),
@@ -235,7 +243,11 @@ const chromeShim = {
                 });
             }
         },
-        onChanged: { addListener: function () { } }
+        onChanged: {
+            addListener: function (callback) {
+                ipcOn('storage-changed', callback);
+            }
+        }
     }
 };
 
