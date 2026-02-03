@@ -90,7 +90,7 @@
             }
 
             dropdown.innerHTML = data.matches.map((m, i) => `
-                <div class="item ${i === data.selectedIndex ? 'selected' : ''}" onclick="navigate('${m.url}')">
+                <div class="item ${i === data.selectedIndex ? 'selected' : ''}" data-url="${m.url}">
                     <img class="icon" src="https://www.google.com/s2/favicons?domain=${m.domain}&sz=32">
                     <div class="details">
                         <div class="title">${m.title || m.domain}</div>
@@ -99,12 +99,19 @@
                 </div>
             `).join('');
 
+            // Attach click listeners
+            dropdown.querySelectorAll('.item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    e.stopPropagation(); // Prevent bubbling issues
+                    const url = item.dataset.url;
+                    if (url) {
+                        ipcRenderer.send('navigate-from-suggestions', url);
+                    }
+                });
+            });
+
             dropdown.classList.add('active');
         });
-
-        function navigate(url) {
-            ipcRenderer.send('navigate-from-suggestions', url);
-        }
     </script>
 </body>
 

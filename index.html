@@ -68,6 +68,7 @@
                 <div class="url-bar-top-container">
                     <input type="text" id="url-bar-top" class="url-bar-top" placeholder="Search or type URL"
                         autocomplete="off">
+                    <div id="zoom-badge" class="zoom-badge hidden">100%</div>
                     <div id="url-dropdown" class="url-dropdown hidden"></div>
                 </div>
             </div>
@@ -78,6 +79,11 @@
                         <circle cx="11" cy="11" r="8"></circle>
                         <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                     </svg>
+                </button>
+
+                <button class="top-bar-settings-btn hidden" id="btn-kitchen-top"
+                    title="The Kitchen (Experimental Tools)">
+                    👨‍🍳
                 </button>
 
                 <button class="top-bar-settings-btn" id="btn-split-top" title="Toggle Split View">
@@ -360,6 +366,21 @@
                                     </label>
                                 </div>
                             </div>
+
+                            <div class="pane-group"
+                                style="border-top: 1px solid rgba(255, 255, 255, 0.05); margin-top: 20px; padding-top: 20px;">
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label class="setting-label">🐀 Ratatouille Mode</label>
+                                        <span class="setting-desc">Enable experimental "under-the-hood" features and
+                                            kitchen tools.</span>
+                                    </div>
+                                    <label class="toggle">
+                                        <input type="checkbox" id="ratatouilleMode">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
                         </section>
 
                         <!-- Pane: Account -->
@@ -605,6 +626,33 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <div class="pane-group"
+                                style="border-top: 1px solid var(--border-glass); padding-top: 20px; margin-top: 20px;">
+                                <h3>Advanced AI Enhancements</h3>
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label class="setting-label">AI Page Translation</label>
+                                        <span class="setting-desc">Enable high-quality translations using your AI
+                                            provider.</span>
+                                    </div>
+                                    <label class="toggle">
+                                        <input type="checkbox" id="aiTranslationEnabled">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label class="setting-label">Smart Tab Grouping</label>
+                                        <span class="setting-desc">Automatically organize tabs based on browsing
+                                            context.</span>
+                                    </div>
+                                    <label class="toggle">
+                                        <input type="checkbox" id="smartGroupingEnabled">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
                         </section>
 
                         <!-- Pane: Updates -->
@@ -721,29 +769,71 @@
         </div>
     </div>
 
-    <!-- Go Search AI Overlay -->
-    <div id="go-search-overlay" class="go-overlay">
-        <div id="go-search-container" class="go-container">
-            <div class="go-header">
-                <div class="go-badge">
-                    <span class="intents-ai-label" style="background: var(--accent-primary);">INTENTS AI</span>
-                </div>
-                <button class="close-btn-mac" id="go-search-close" title="Close">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                        <path d="M18 6L6 18M6 6l12 12" />
-                    </svg>
-                </button>
-            </div>
-            <div id="go-search-body" class="go-body">
-                <!-- Content injected by JS -->
-            </div>
-            <div id="go-search-fallback" class="go-fallback" style="display: none;">
-                <p>Couldn't find an AI summary. Try searching on Google instead.</p>
-                <a id="go-google-fallback" href="#" target="_blank" class="accent-button">Search Google</a>
-            </div>
+    <!-- Find in Page -->
+    <div id="find-box" class="find-box hidden">
+        <div class="find-input-wrapper">
+            <input type="text" id="find-input" placeholder="Find in page..." autocomplete="off">
+            <span id="find-results" class="find-results">0 / 0</span>
+        </div>
+        <div class="find-actions">
+            <button id="find-prev" class="find-btn" title="Previous (Shift+Enter)">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="18 15 12 9 6 15"></polyline>
+                </svg>
+            </button>
+            <button id="find-next" class="find-btn" title="Next (Enter)">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+            </button>
+            <button id="find-close" class="find-btn" title="Close (Esc)">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
         </div>
     </div>
 
+    <!-- Tab Preview Card -->
+    <div id="tab-preview-card" class="tab-preview-card">
+        <img class="tab-preview-img" id="tab-preview-img" src="">
+        <div class="tab-preview-info">
+            <img class="tab-preview-favicon" id="tab-preview-favicon" src="">
+            <span class="tab-preview-title" id="tab-preview-title"></span>
+        </div>
+    </div>
+
+    <!-- Download Notification System -->
+    <div id="downloads-center" class="downloads-center">
+        <!-- Download chips will be injected here -->
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Navigation Gesture Indicator -->
+    <div id="nav-gesture-overlay" class="nav-gesture-overlay">
+        <div id="nav-indicator-left" class="nav-indicator left">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                stroke-linejoin="round">
+                <path d="M19 12H5" />
+                <path d="M12 19l-7-7 7-7" />
+            </svg>
+        </div>
+        <div id="nav-indicator-right" class="nav-indicator right">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                stroke-linejoin="round">
+                <path d="M5 12h14" />
+                <path d="M12 5l7 7-7 7" />
+            </svg>
+        </div>
+    </div>
+
+    <!-- Scripts -->
     <script src="renderer.js"></script>
     <script src="update-handler.js"></script>
 </body>

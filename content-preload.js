@@ -184,7 +184,13 @@ try {
         // Context Menu & Intent Actions
         getSelection: () => ipcInvoke('get-selection'),
         toggleIntentMode: () => ipcSend('toggle-intent-mode'),
-        triggerIsolate: (text) => ipcSend('trigger-isolate', text)
+        triggerIsolate: (text) => ipcSend('trigger-isolate', text),
+
+        // Tor Control (Exposed to Incognito page)
+        setTorEnabled: (enabled) => ipcSend('set-tor-enabled', enabled),
+        panicIncognito: () => ipcSend('panic-incognito'),
+        onTorSetupProgress: (callback) => ipcOn('tor-setup-progress', callback),
+        onTorSetupError: (callback) => ipcOn('tor-setup-error', callback)
     });
 } catch (err) {
     console.error('[ContentPreload] Error exposing window.browser:', err);
@@ -272,6 +278,64 @@ window.addEventListener('mousemove', (e) => {
         }
     }
 });
+
+// Trackpad Swipe Gestures
+let wheelAccumulatorX = 0;
+let isSwiping = false;
+const swipeThreshold = 180;
+let lastWheelTime = 0;
+
+window.addEventListener('wheel', (e) => {
+    // Only handle horizontal-heavy events
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        const now = Date.now();
+        // If there hasn't been a wheel event in a while, it might be a new gesture
+        if (now - lastWheelTime > 200) {
+            wheelAccumulatorX = 0;
+            isSwiping = false;
+        }
+        lastWheelTime = now;
+
+        wheelAccumulatorX += e.deltaX;
+
+        // Threshold to start showing the swipe indicator
+        if (!isSwiping && Math.abs(wheelAccumulatorX) > 40) {
+            isSwiping = true;
+            ipcSend('swipe-gesture', {
+                action: 'start',
+                direction: wheelAccumulatorX < 0 ? 'back' : 'forward'
+            });
+        }
+
+        if (isSwiping) {
+            const progress = Math.min(100, (Math.abs(wheelAccumulatorX) / swipeThreshold) * 100);
+            ipcSend('swipe-gesture', {
+                action: 'update',
+                direction: wheelAccumulatorX < 0 ? 'back' : 'forward',
+                progress: progress,
+                x: wheelAccumulatorX
+            });
+
+            // Trigger point reached
+            if (Math.abs(wheelAccumulatorX) >= swipeThreshold) {
+                console.log('[ContentPreload] Swipe threshold reached, navigating...');
+                ipcSend('swipe-gesture', {
+                    action: 'complete',
+                    direction: wheelAccumulatorX < 0 ? 'back' : 'forward'
+                });
+                wheelAccumulatorX = 0;
+                isSwiping = false;
+            }
+        }
+    } else {
+        // Vertical movement cancels horizontal swipe
+        if (isSwiping && Math.abs(e.deltaY) > 30) {
+            ipcSend('swipe-gesture', { action: 'cancel' });
+            wheelAccumulatorX = 0;
+            isSwiping = false;
+        }
+    }
+}, { passive: true });
 
 console.log('[ContentPreload] Initialization complete');
 

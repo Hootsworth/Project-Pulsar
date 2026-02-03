@@ -111,6 +111,17 @@ try {
         closeApp: () => ipcSend('close-app'),
         showLogoMenu: (pos) => ipcSend('show-logo-menu', pos),
 
+        // Find in Page
+        findInPage: (text, options) => ipcSend('find-in-page', { text, options }),
+        stopFind: (action) => ipcSend('stop-find', { action }),
+        setFindActive: (active) => ipcSend('set-find-active', active),
+
+        // Zoom
+        setZoom: (factor) => ipcSend('set-zoom', { factor }),
+
+        // Downloads
+        setDownloadsActive: (active) => ipcSend('set-downloads-active', active),
+
         // Listeners
         onUpdateStatus: (callback) => ipcOn('update-status', callback),
         onUpdateUrl: (callback) => ipcOn('update-url', callback),
@@ -133,7 +144,16 @@ try {
         setTorEnabled: (enabled) => ipcSend('set-tor-enabled', enabled),
         panicIncognito: () => ipcSend('panic-incognito'),
         onTorSetupProgress: (callback) => ipcOn('tor-setup-progress', callback),
-        onTorSetupError: (callback) => ipcOn('tor-setup-error', callback)
+        onTorSetupError: (callback) => ipcOn('tor-setup-error', callback),
+
+        // New Feature Listeners
+        onShowFind: (callback) => ipcOn('show-find', callback),
+        onFindMatchResults: (callback) => ipcOn('find-match-results', callback),
+        onSetZoomLevel: (callback) => ipcOn('set-zoom-level', callback),
+        onDownloadStarted: (callback) => ipcOn('download-started', callback),
+        onDownloadUpdated: (callback) => ipcOn('download-updated', callback),
+        onDownloadDone: (callback) => ipcOn('download-done', callback),
+        onSwipeGesture: (callback) => ipcOn('swipe-gesture', callback)
     });
 
     console.log('[Preload] window.browser exposed successfully');

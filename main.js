@@ -8,7 +8,13 @@ const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
-const { handleAISearch: handleAISearchHelper, GENERIC_SYSTEM_PROMPT: HELPER_SYSTEM_PROMPT } = require('./ai_helper');
+const {
+    handleAISearch: handleAISearchHelper,
+    GENERIC_SYSTEM_PROMPT: HELPER_SYSTEM_PROMPT,
+    REWRITE_SYSTEM_PROMPTS,
+    SUMMARIZE_SYSTEM_PROMPT,
+    EXPLAIN_SYSTEM_PROMPT
+} = require('./ai_helper');
 
 console.log('[Main] Starting Pulsar...');
 
@@ -153,6 +159,8 @@ function getWindowState(win) {
 let isSettingsOpen = false; // Globally shared for now (modal)
 let isAIOverlayOpen = false;
 let isActionBarOpen = false;
+let isFindActive = false;
+let isDownloadsActive = false;
 let isAutoHideEnabled = false;
 let torProcess = null; // Managed Tor daemon
 let incognitoSecret = Math.random().toString(36).substring(2); // Seed for deterministic noise
@@ -533,13 +541,29 @@ function setupTabView(tab) {
                     return h;
                 };
                 const sessionSeed = hash(secret);
+                const prng = (seed) => {
+                    let s = seed;
+                    return () => {
+                        s = (s * 16807) % 2147483647;
+                        return (s - 1) / 2147483646;
+                    };
+                };
+                const nextRandom = prng(sessionSeed);
 
-                // 1. Hardware & OS normalization
-                Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 4 });
-                Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
-                Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
-                Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-                Object.defineProperty(navigator, 'language', { get: () => 'en-US' });
+                // 1. Hardware & OS normalization (Persona Consistency)
+                const persona = {
+                    hardwareConcurrency: 8,
+                    deviceMemory: 16,
+                    platform: 'Win32',
+                    languages: ['en-US', 'en'],
+                    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+                };
+
+                Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => persona.hardwareConcurrency });
+                Object.defineProperty(navigator, 'deviceMemory', { get: () => persona.deviceMemory });
+                Object.defineProperty(navigator, 'platform', { get: () => persona.platform });
+                Object.defineProperty(navigator, 'languages', { get: () => persona.languages });
+                Object.defineProperty(navigator, 'language', { get: () => persona.languages[0] });
                 Object.defineProperty(navigator, 'webdriver', { get: () => false });
                 Object.defineProperty(navigator, 'doNotTrack', { get: () => '1' });
                 
@@ -554,20 +578,19 @@ function setupTabView(tab) {
                 // 3. Timing Attack Defense (Quantization)
                 const originalNow = performance.now.bind(performance);
                 performance.now = () => Math.floor(originalNow() / 100) * 100;
-                if (window.SharedArrayBuffer) delete window.SharedArrayBuffer; // Prevent high-res timers
+                if (window.SharedArrayBuffer) delete window.SharedArrayBuffer; 
 
-                // 4. WebGL Normalization
+                // 4. WebGL Normalization (Align with Persona)
                 const originalGetParameter = WebGLRenderingContext.prototype.getParameter;
                 WebGLRenderingContext.prototype.getParameter = function(parameter) {
-                    // Spoof Common Renderer Strings
-                    if (parameter === 37445) return 'Intel Inc.'; // UNMASKED_VENDOR_WEBGL
-                    if (parameter === 37446) return 'Intel Iris Pro Graphics'; // UNMASKED_RENDERER_WEBGL
+                    if (parameter === 37445) return 'Google Inc. (Intel)'; // UNMASKED_VENDOR_WEBGL
+                    if (parameter === 37446) return 'ANGLE (Intel, Intel(R) UHD Graphics (0x00009BC4) Direct3D11 vs_5_0 ps_5_0, D3D11)'; // UNMASKED_RENDERER_WEBGL
                     if (parameter === 7936) return 'WebKit'; // VENDOR
                     if (parameter === 7937) return 'WebKit WebGL'; // RENDERER
                     return originalGetParameter.apply(this, arguments);
                 };
 
-                // 5. Deterministic Canvas Noise (Stable per session)
+                // 5. Deterministic Canvas Noise
                 const originalGetImageData = CanvasRenderingContext2D.prototype.getImageData;
                 CanvasRenderingContext2D.prototype.getImageData = function(x, y, w, h) {
                     const data = originalGetImageData.apply(this, arguments);
@@ -578,21 +601,62 @@ function setupTabView(tab) {
                     return data;
                 };
 
-                // 6. Battery & Network (Disable / Static)
+                // 6. Font Enumeration Defense
+                if (navigator.queryLocalFonts) {
+                   navigator.queryLocalFonts = () => Promise.resolve([]);
+                }
+                
+                const originalMeasureText = CanvasRenderingContext2D.prototype.measureText;
+                CanvasRenderingContext2D.prototype.measureText = function(text) {
+                    const metrics = originalMeasureText.apply(this, arguments);
+                    // Add tiny deterministic jitter (0.01% of width) based on string hash
+                    const textHash = hash(text + secret);
+                    const jitter = (textHash % 100) / 1000; 
+                    
+                    // Proxied object to return jittered values
+                    return new Proxy(metrics, {
+                        get(target, prop) {
+                            const val = target[prop];
+                            if (typeof val === 'number') {
+                                return val + jitter;
+                            }
+                            return val;
+                        }
+                    });
+                };
+
+                // 7. Audio Context Fingerprinting Protection
+                const jitterAudio = (buffer) => {
+                    for (let i = 0; i < buffer.length; i += 128) {
+                        const noise = (nextRandom() - 0.5) * 1e-7; // Tiny inaudible noise
+                        buffer[i] += noise;
+                    }
+                };
+
+                const originalGetChannelData = AudioBuffer.prototype.getChannelData;
+                AudioBuffer.prototype.getChannelData = function() {
+                    const data = originalGetChannelData.apply(this, arguments);
+                    jitterAudio(data);
+                    return data;
+                };
+
+                const originalStartRendering = OfflineAudioContext.prototype.startRendering;
+                OfflineAudioContext.prototype.startRendering = function() {
+                    return originalStartRendering.apply(this, arguments).then(buffer => {
+                        for (let i = 0; i < buffer.numberOfChannels; i++) {
+                            jitterAudio(buffer.getChannelData(i));
+                        }
+                        return buffer;
+                    });
+                };
+
+                // 8. Battery & Network
                 if (navigator.getBattery) navigator.getBattery = () => Promise.reject();
                 if (navigator.connection) {
                     Object.defineProperty(navigator, 'connection', { get: () => ({ 
                         effectiveType: '4g', rtt: 50, downlink: 10, saveData: false 
                     })});
                 }
-
-                // 7. Font Defense (Basic measure)
-                const originalMeasureText = CanvasRenderingContext2D.prototype.measureText;
-                CanvasRenderingContext2D.prototype.measureText = function() {
-                    const metrics = originalMeasureText.apply(this, arguments);
-                    // Slight deterministic jitter to metrics
-                    return metrics; 
-                };
             })();
         `;
         view.webContents.on('dom-ready', () => {
@@ -602,13 +666,44 @@ function setupTabView(tab) {
     view.setBounds({ x: 0, y: 0, width: 1, height: 1 });
     view.setAutoResize({ width: false, height: false });
 
-    // Add Context Menu
+    // Find in Page Match Listener
+    view.webContents.on('found-in-page', (event, result) => {
+        sendToRenderer('find-match-results', {
+            requestId: result.requestId,
+            activeMatchOrdinal: result.activeMatchOrdinal,
+            matches: result.matches,
+            selectionRange: result.selectionRange,
+            finalUpdate: result.finalUpdate
+        }, 'main', tab.windowId);
+    });
+
+    // Expanded Context Menu
     view.webContents.on('context-menu', (event, params) => {
         const menuTemplate = [];
+        const storage = loadStorage();
+        const win = BrowserWindow.fromId(tab.windowId);
+        if (!win) return;
 
+        // 1. TEXT SELECTION
         if (params.selectionText) {
             const trimmedSelection = params.selectionText.trim();
             if (trimmedSelection.length > 0) {
+                menuTemplate.push({
+                    label: 'Ask Pulsar AI',
+                    click: () => {
+                        // Trigger AI Search overlay with this query
+                        sendToRenderer('go-search-trigger', { query: trimmedSelection }, 'main', win.id);
+                    }
+                });
+                menuTemplate.push({
+                    label: 'Deconstruct with AI',
+                    click: () => {
+                        // Specialized "Explain this" prompt
+                        sendToRenderer('go-search-trigger', { query: `Explain this in simple terms: ${trimmedSelection}` }, 'main', win.id);
+                    }
+                });
+                menuTemplate.push({ type: 'separator' });
+
                 menuTemplate.push({
                     label: 'Hold That Thought',
                     click: () => {
@@ -621,7 +716,7 @@ function setupTabView(tab) {
                     }
                 });
                 menuTemplate.push({
-                    label: 'Isolate This Section',
+                    label: 'Isolate Section',
                     click: () => {
                         view.webContents.send('extension-action', {
                             action: 'triggerIsolate',
@@ -630,25 +725,176 @@ function setupTabView(tab) {
                     }
                 });
                 menuTemplate.push({ type: 'separator' });
+
+                // AI Rewrite Submenu
+                menuTemplate.push({
+                    label: 'AI Refinement',
+                    submenu: [
+                        { label: 'Condense / Shorter', click: () => triggerRewrite(view, trimmedSelection, 'shorter') },
+                        { label: 'Professional Polish', click: () => triggerRewrite(view, trimmedSelection, 'professional') },
+                        { label: 'Clarify / Simplify', click: () => triggerRewrite(view, trimmedSelection, 'simplify') },
+                        { label: 'Elaborate / Expand', click: () => triggerRewrite(view, trimmedSelection, 'lengthen') },
+                        { label: 'Creative Variant', click: () => triggerRewrite(view, trimmedSelection, 'creative') }
+                    ]
+                });
+
+                menuTemplate.push({ type: 'separator' });
                 menuTemplate.push({ role: 'copy' });
+                menuTemplate.push({
+                    label: 'Translate Selection',
+                    click: () => {
+                        sendToRenderer('go-search-trigger', { query: `Translate this to English: ${trimmedSelection}` }, 'main', win.id);
+                    }
+                });
+                menuTemplate.push({
+                    label: `Search Google for "${trimmedSelection.substring(0, 20)}${trimmedSelection.length > 20 ? '...' : ''}"`,
+                    click: () => {
+                        createTab(`https://www.google.com/search?q=${encodeURIComponent(trimmedSelection)}`, false, { windowId: win.id });
+                    }
+                });
+                menuTemplate.push({ type: 'separator' });
             }
         }
 
-        if (!params.selectionText) {
-            menuTemplate.push({ role: 'back' });
-            menuTemplate.push({ role: 'forward' });
-            menuTemplate.push({ role: 'reload' });
+        // 2. LINKS
+        if (params.linkURL) {
+            menuTemplate.push({
+                label: 'Open Link in New Tab',
+                click: () => createTab(params.linkURL, false, { windowId: win.id })
+            });
+            menuTemplate.push({
+                label: 'Open Link in Incognito Window',
+                click: () => createTab(params.linkURL, true, { windowId: win.id })
+            });
+            menuTemplate.push({ type: 'separator' });
+            menuTemplate.push({
+                label: 'Copy Link Address',
+                click: () => {
+                    const { clipboard } = require('electron');
+                    clipboard.writeText(params.linkURL);
+                }
+            });
+            menuTemplate.push({
+                label: 'Save Link As...',
+                click: () => {
+                    view.webContents.downloadURL(params.linkURL);
+                }
+            });
+            menuTemplate.push({ type: 'separator' });
         }
 
+        // 3. IMAGES / MEDIA
+        if (params.mediaType === 'image') {
+            menuTemplate.push({
+                label: 'Open Image in New Tab',
+                click: () => createTab(params.srcURL, false, { windowId: win.id })
+            });
+            menuTemplate.push({
+                label: 'Copy Image',
+                click: () => view.webContents.copyImageAt(params.x, params.y)
+            });
+            menuTemplate.push({
+                label: 'Copy Image Address',
+                click: () => {
+                    const { clipboard } = require('electron');
+                    clipboard.writeText(params.srcURL);
+                }
+            });
+            menuTemplate.push({
+                label: 'Save Image As...',
+                click: () => {
+                    view.webContents.downloadURL(params.srcURL);
+                }
+            });
+            menuTemplate.push({ type: 'separator' });
+        }
+
+        // 4. EDITABLE
+        if (params.isEditable) {
+            menuTemplate.push({ role: 'undo' });
+            menuTemplate.push({ role: 'redo' });
+            menuTemplate.push({ type: 'separator' });
+            menuTemplate.push({ role: 'cut' });
+            menuTemplate.push({ role: 'copy' });
+            menuTemplate.push({ role: 'paste' });
+            menuTemplate.push({ type: 'separator' });
+            menuTemplate.push({ role: 'selectAll' });
+            menuTemplate.push({ type: 'separator' });
+        }
+
+        // 5. NAVIGATION & PAGE (Only if nothing specific selected)
+        if (!params.selectionText && !params.linkURL && params.mediaType === 'none') {
+            menuTemplate.push({
+                label: 'Back',
+                enabled: view.webContents.canGoBack(),
+                click: () => view.webContents.goBack()
+            });
+            menuTemplate.push({
+                label: 'Forward',
+                enabled: view.webContents.canGoForward(),
+                click: () => view.webContents.goForward()
+            });
+            menuTemplate.push({
+                label: 'Reload',
+                click: () => view.webContents.reload()
+            });
+            menuTemplate.push({ type: 'separator' });
+
+            menuTemplate.push({
+                label: 'Summarize This Page',
+                click: () => {
+                    sendToRenderer('go-search-trigger', { query: '/summarize' }, 'main', win.id);
+                }
+            });
+
+            if (storage.aiTranslationEnabled) {
+                menuTemplate.push({
+                    label: 'Translate Page with AI',
+                    click: () => {
+                        sendToRenderer('go-search-trigger', { query: 'Translate this page to English' }, 'main', win.id);
+                    }
+                });
+            }
+
+            menuTemplate.push({ type: 'separator' });
+            menuTemplate.push({
+                label: 'Save Page As...',
+                click: () => {
+                    view.webContents.savePage('', 'HTMLComplete').catch(console.error);
+                }
+            });
+            menuTemplate.push({
+                label: 'Print...',
+                click: () => view.webContents.print()
+            });
+            menuTemplate.push({
+                label: 'View Page Source',
+                click: () => {
+                    const sourceUrl = 'view-source:' + view.webContents.getURL();
+                    createTab(sourceUrl, false, { windowId: win.id });
+                }
+            });
+        }
+
+        // 6. DEVELOPER TOOLS
         menuTemplate.push({ type: 'separator' });
-        menuTemplate.push({ role: 'cut' });
-        menuTemplate.push({ role: 'copy' });
-        menuTemplate.push({ role: 'paste' });
-        menuTemplate.push({ type: 'separator' });
-        menuTemplate.push({ role: 'inspectElement' });
+        if (storage.ratatouilleMode) {
+            menuTemplate.push({
+                label: '🧀 Inspect Component',
+                click: () => {
+                    view.webContents.inspectElement(params.x, params.y);
+                }
+            });
+        }
+        menuTemplate.push({
+            label: 'Inspect Element',
+            click: () => {
+                view.webContents.inspectElement(params.x, params.y);
+            }
+        });
 
         const menu = Menu.buildFromTemplate(menuTemplate);
-        menu.popup({ window: BrowserWindow.fromWebContents(view.webContents) });
+        menu.popup({ window: win });
     });
 
     // Track navigation events
@@ -698,6 +944,11 @@ function setupTabView(tab) {
             saveStorage(storage);
         }
         if (win) updateTabsList(win);
+
+        // Smart Tab Grouping (Async)
+        handleSmartTabGrouping(tab).then(() => {
+            if (win) updateTabsList(win);
+        }).catch(err => console.error('[Main] smartGrouping failed:', err));
     });
 
     view.webContents.on('did-navigate-in-page', (event, navUrl) => {
@@ -1465,15 +1716,17 @@ function sendToRenderer(channel, data, target = 'all', winId = null) {
 // TOR SERVICE MANAGEMENT
 // ============================================
 
-const TOR_URL = 'https://dist.torproject.org/torbrowser/13.0.10/tor-expert-bundle-windows-x86_64-13.0.10.tar.gz';
+const TOR_URL = 'https://dist.torproject.org/torbrowser/15.0.5/tor-expert-bundle-windows-x86_64-15.0.5.tar.gz';
 const TOR_DIR = path.join(app.getPath('userData'), 'tor');
 const TOR_EXE = path.join(TOR_DIR, 'tor', 'tor.exe');
+const TOR_DATA = path.join(TOR_DIR, 'data');
 
 async function ensureTorBinary() {
     if (fs.existsSync(TOR_EXE)) return true;
 
     console.log('[Tor] Binary not found, starting download...');
     if (!fs.existsSync(TOR_DIR)) fs.mkdirSync(TOR_DIR, { recursive: true });
+    if (!fs.existsSync(TOR_DATA)) fs.mkdirSync(TOR_DATA, { recursive: true });
 
     const tarPath = path.join(TOR_DIR, 'tor.tar.gz');
 
@@ -1533,10 +1786,11 @@ async function ensureTorBinary() {
                     console.log('[Tor] Extraction starting...');
                     sendToRenderer('tor-setup-progress', { status: 'Extracting', progress: 100 });
 
-                    // Use built-in Windows tar
-                    exec(`tar -xzf "${tarPath}" -C "${TOR_DIR}"`, (err, stdout, stderr) => {
+                    // Use built-in Windows tar for .tar.gz
+                    const extractCmd = `tar -xzf "${tarPath}" -C "${TOR_DIR}"`;
+                    exec(extractCmd, (err, stdout, stderr) => {
                         if (err) {
-                            console.error('[Tor] Extraction failed:', err);
+                            console.error('[Tor] Extraction failed:', err, stderr);
                             sendToRenderer('tor-setup-error', 'Extraction failed');
                             return reject(err);
                         }
@@ -1570,7 +1824,13 @@ function startTorService() {
             console.log('[Tor] Starting process...');
             sendToRenderer('tor-setup-progress', { status: 'Bootstrapping', progress: 0 });
 
-            torProcess = spawn(TOR_EXE, ['--ignore-missing-torrc'], {
+            torProcess = spawn(TOR_EXE, [
+                '--ignore-missing-torrc',
+                '--DataDirectory', TOR_DATA,
+                '--GeoIPFile', path.join(TOR_DIR, 'tor', 'geoip'),
+                '--GeoIPv6File', path.join(TOR_DIR, 'tor', 'geoip6'),
+                '--SocksPort', '9050'
+            ], {
                 detached: false,
                 windowsHide: true,
                 cwd: path.dirname(TOR_EXE)
@@ -1741,6 +2001,103 @@ function configurePrivacySession(sess, isIncognito) {
         }
         callback({ requestHeaders });
     });
+
+    // Download Management
+    sess.on('will-download', (event, item, webContents) => {
+        const filename = item.getFilename();
+        const totalBytes = item.getTotalBytes();
+        const downloadId = Date.now().toString();
+
+        sendToRenderer('download-started', {
+            id: downloadId,
+            filename: filename,
+            totalBytes: totalBytes
+        });
+
+        item.on('updated', (event, state) => {
+            if (state === 'interrupted') {
+                sendToRenderer('download-updated', { id: downloadId, status: 'interrupted' });
+            } else if (state === 'progressing') {
+                if (item.isPaused()) {
+                    sendToRenderer('download-updated', { id: downloadId, status: 'paused' });
+                } else {
+                    sendToRenderer('download-updated', {
+                        id: downloadId,
+                        status: 'progressing',
+                        receivedBytes: item.getReceivedBytes()
+                    });
+                }
+            }
+        });
+
+        item.once('done', (event, state) => {
+            if (state === 'completed') {
+                sendToRenderer('download-done', { id: downloadId, status: 'completed' });
+            } else {
+                sendToRenderer('download-done', { id: downloadId, status: 'failed', error: state });
+            }
+        });
+    });
+}
+
+// ============================================
+// SMART TAB GROUPING (Opt-in)
+// ============================================
+
+function getRandomAccentColor() {
+    const colors = ['#007aff', '#0ea5e9', '#22c55e', '#f97316', '#8b5cf6', '#ec4899'];
+    return colors[Math.floor(Math.random() * colors.length)];
+}
+
+async function handleSmartTabGrouping(tab) {
+    const storage = loadStorage();
+    if (storage.smartGroupingEnabled !== true) return;
+
+    const url = tab.url;
+    if (!url || url.startsWith('file://') || url.startsWith('about:') || url === 'pulsar://newtab' || tab.isIncognito) return;
+
+    try {
+        const hostname = new URL(url).hostname;
+        let category = 'General';
+
+        // Enhanced categorization
+        if (hostname.includes('github') || hostname.includes('stackoverflow') || hostname.includes('npm') || hostname.includes('docs')) {
+            category = 'Development';
+        } else if (hostname.includes('netflix') || hostname.includes('youtube') || hostname.includes('twitch') || hostname.includes('spotify')) {
+            category = 'Entertainment';
+        } else if (hostname.includes('google') || hostname.includes('bing') || hostname.includes('wikipedia')) {
+            category = 'Research';
+        } else if (hostname.includes('amazon') || hostname.includes('ebay') || hostname.includes('etsy')) {
+            category = 'Shopping';
+        } else if (hostname.includes('twitter') || hostname.includes('facebook') || hostname.includes('instagram') || hostname.includes('reddit')) {
+            category = 'Social';
+        } else if (hostname.includes('gmail') || hostname.includes('protons') || hostname.includes('slack')) {
+            category = 'Communication';
+        }
+
+        if (category === 'General') return; // Don't group general stuff automatically
+
+        // Find or create folder
+        let folder = folders.find(f => f.title === category);
+        if (!folder) {
+            folder = {
+                id: Date.now(),
+                title: category,
+                color: getRandomAccentColor(),
+                isMinimized: false,
+                state: 'open'
+            };
+            folders.push(folder);
+        }
+
+        // Move tab to folder if it's not already in one
+        if (!tab.folderId) {
+            tab.folderId = folder.id;
+            console.log(`[SmartGrouping] Auto-grouped tab ${tab.id} into ${category}`);
+        }
+    } catch (e) {
+        console.error('[SmartGrouping] Error:', e.message);
+    }
 }
 
 function getRandomUserAgent() {
@@ -1808,6 +2165,16 @@ function createWindow(options = {}) {
 
         win.on('maximize', () => updateWindowLayout(win));
         win.on('unmaximize', () => updateWindowLayout(win));
+
+        win.on('enter-full-screen', () => {
+            console.log(`[Main] Window ${win.id} entered full-screen`);
+            updateWindowLayout(win);
+        });
+
+        win.on('leave-full-screen', () => {
+            console.log(`[Main] Window ${win.id} left full-screen`);
+            updateWindowLayout(win);
+        });
 
         win.on('focus', () => {
             // Keep track of which window was last focused for IPC routing
@@ -1965,9 +2332,99 @@ ipcMain.on('tab-pin', (event, { tabId, pinned }) => {
 
 // AI Search (invoke = async response)
 ipcMain.handle('ai-search', async (event, { query, settings, systemPrompt }) => {
-    console.log('[Main] IPC: ai-search', query.substring(0, 50) + '...');
-    return await handleAISearch(query, settings, systemPrompt);
+    let effectivePrompt = systemPrompt || HELPER_SYSTEM_PROMPT;
+    let effectiveQuery = query;
+
+    // Handle Slash Commands
+    if (query.startsWith('/summarize')) {
+        effectivePrompt = SUMMARIZE_SYSTEM_PROMPT;
+        // If it's just /summarize, try to get context from the sender webContents
+        if (query.trim() === '/summarize') {
+            const win = BrowserWindow.fromWebContents(event.sender);
+            const tab = getActiveTab(win?.id);
+            if (tab && tab.view) {
+                try {
+                    const data = await tab.view.webContents.executeJavaScript(`
+                       (function() {
+                           return {
+                               title: document.title,
+                               text: document.body.innerText.substring(0, 10000)
+                           };
+                       })()
+                   `);
+                    effectiveQuery = `Analyze the following page:\nTitle: ${data.title}\n\nContent:\n${data.text}`;
+                } catch (e) {
+                    console.error('[Main] Failed to extract page context for summarize:', e.message);
+                }
+            }
+        }
+    } else if (query.startsWith('/explain')) {
+        effectivePrompt = EXPLAIN_SYSTEM_PROMPT;
+        // Similar context extraction for /explain if no text follows
+        if (query.trim() === '/explain') {
+            const win = BrowserWindow.fromWebContents(event.sender);
+            const tab = getActiveTab(win?.id);
+            if (tab && tab.view) {
+                try {
+                    const data = await tab.view.webContents.executeJavaScript(`
+                       (function() {
+                           return {
+                               title: document.title,
+                               text: document.body.innerText.substring(0, 5000)
+                           };
+                       })()
+                   `);
+                    effectiveQuery = `Explain the core concepts of this page:\nTitle: ${data.title}\n\nContent:\n${data.text}`;
+                } catch (e) {
+                    console.error('[Main] Failed to extract page context for explain:', e.message);
+                }
+            }
+        }
+    }
+
+    return await handleAISearchHelper(effectiveQuery, settings, effectivePrompt);
 });
+
+async function triggerRewrite(view, text, mode) {
+    const storage = loadStorage();
+    const settings = {
+        aiProvider: storage.aiProvider,
+        openaiKey: storage.openaiKey,
+        intentsSearchKey: storage.intentsSearchKey,
+        geminiKey: storage.geminiKey,
+        grokKey: storage.grokKey
+    };
+
+    const systemPrompt = REWRITE_SYSTEM_PROMPTS[mode] || REWRITE_SYSTEM_PROMPTS.shorter;
+
+    // Show loading popup in the webContents
+    view.webContents.send('extension-action', {
+        action: 'showAIRewritePopup',
+        selectedText: text,
+        mode: mode,
+        loading: true
+    });
+
+    try {
+        const result = await handleAISearchHelper(text, settings, systemPrompt);
+        view.webContents.send('extension-action', {
+            action: 'showAIRewritePopup',
+            selectedText: text,
+            mode: mode,
+            result: result.summary,
+            error: result.error,
+            loading: false
+        });
+    } catch (err) {
+        view.webContents.send('extension-action', {
+            action: 'showAIRewritePopup',
+            selectedText: text,
+            mode: mode,
+            error: err.message,
+            loading: false
+        });
+    }
+}
 
 ipcMain.handle('get-app-version', () => {
     return app.getVersion();
@@ -1976,14 +2433,53 @@ ipcMain.handle('get-app-version', () => {
 ipcMain.on('go-search-trigger', (event, { query }) => {
     console.log('[Main] IPC: go-search-trigger', query);
     // Send to main window only
-    if (mainWindow && mainWindow.webContents) {
-        mainWindow.webContents.send('go-search-trigger', { query });
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win) {
+        win.webContents.send('go-search-trigger', { query });
     }
+});
+
+// Find In Page
+ipcMain.on('find-in-page', (event, { text, options }) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const tab = getActiveTab(win?.id);
+    if (tab && tab.view) {
+        tab.view.webContents.findInPage(text, options);
+    }
+});
+
+ipcMain.on('stop-find', (event, { action }) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const tab = getActiveTab(win?.id);
+    if (tab && tab.view) {
+        tab.view.webContents.stopFindInPage(action || 'clearSelection');
+    }
+});
+
+// Zoom Controls
+ipcMain.on('set-zoom', (event, { factor }) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const tab = getActiveTab(win?.id);
+    if (tab && tab.view) {
+        tab.view.webContents.setZoomFactor(factor);
+    }
+});
+
+ipcMain.on('set-find-active', (event, active) => {
+    isFindActive = active;
+    windows.forEach(win => updateAllTabBounds(win));
+});
+
+ipcMain.on('set-downloads-active', (event, active) => {
+    isDownloadsActive = active;
+    windows.forEach(win => updateAllTabBounds(win));
 });
 
 ipcMain.on('set-split-ratio', (event, ratio) => {
     splitRatio = Math.max(0.1, Math.min(0.9, ratio));
-    updateAllTabBounds();
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) updateAllTabBounds(win);
+    else windows.forEach(w => updateAllTabBounds(w));
 
     // Persist split ratio
     const storage = loadStorage();
@@ -2240,7 +2736,7 @@ ipcMain.on('set-settings-visibility', async (event, visible) => {
             // Clear snapshot
             sendToRenderer('update-blur-snapshot', null);
             mainWindow.addBrowserView(tab.view);
-            updateAllTabBounds();
+            updateAllTabBounds(mainWindow);
         }
     }
 });
@@ -2275,7 +2771,7 @@ ipcMain.on('set-ai-overlay-visible', async (event, visible) => {
         } else {
             sendToRenderer('update-blur-snapshot', null);
             mainWindow.addBrowserView(tab.view);
-            updateAllTabBounds();
+            updateAllTabBounds(mainWindow);
         }
     }
 });
@@ -2296,7 +2792,7 @@ ipcMain.on('set-action-bar-visible', async (event, visible) => {
         } else {
             sendToRenderer('update-blur-snapshot', null);
             mainWindow.addBrowserView(tab.view);
-            updateAllTabBounds();
+            updateAllTabBounds(mainWindow);
         }
     }
 });
@@ -2310,6 +2806,21 @@ ipcMain.handle('get-open-tabs', async () => {
         favicon: t.favicon,
         isIncognito: t.isIncognito
     }));
+});
+
+ipcMain.handle('get-tab-thumbnail', async (event, tabId) => {
+    try {
+        const tab = tabs.find(t => t.id === tabId);
+        if (!tab || !tab.view) return null;
+
+        const image = await tab.view.webContents.capturePage();
+        // Resize to a reasonable thumbnail size (e.g., 200px width)
+        const thumbnail = image.resize({ width: 240 });
+        return thumbnail.toDataURL();
+    } catch (err) {
+        console.error('[Main] Error getting tab thumbnail:', err.message);
+        return null;
+    }
 });
 
 ipcMain.handle('extract-tab-data', async (event, tabId) => {
@@ -2336,8 +2847,33 @@ ipcMain.handle('extract-tab-data', async (event, tabId) => {
         return data;
     } catch (err) {
         console.error('[Main] Extraction error:', err.message);
-        return { error: err.message };
     }
+});
+
+ipcMain.handle('open-devtools', (event) => {
+    const tab = getActiveTab();
+    if (tab && tab.view && tab.view.webContents) {
+        tab.view.webContents.openDevTools({ mode: 'detach' });
+    }
+});
+
+ipcMain.handle('clear-cache', async (event) => {
+    const tab = getActiveTab();
+    if (tab && tab.view && tab.view.webContents) {
+        await tab.view.webContents.session.clearCache();
+        await tab.view.webContents.session.clearStorageData();
+        return { success: true };
+    }
+    return { error: 'No active view found' };
+});
+
+ipcMain.handle('get-performance', () => {
+    const usage = process.memoryUsage();
+    return {
+        heapUsed: (usage.heapUsed / 1024 / 1024).toFixed(2) + ' MB',
+        heapTotal: (usage.heapTotal / 1024 / 1024).toFixed(2) + ' MB',
+        rss: (usage.rss / 1024 / 1024).toFixed(2) + ' MB'
+    };
 });
 
 // ============================================
@@ -2364,7 +2900,7 @@ ipcMain.on('set-url-focus', async (event, focused) => {
         const bounds = mainWindow.getContentBounds();
         suggestionsView.setBounds({
             x: Math.round((bounds.width - 300) / 2),
-            y: 40,
+            y: 48,
             width: 300,
             height: 400
         });
@@ -2387,6 +2923,27 @@ ipcMain.on('update-suggestions-data', (event, data) => {
 ipcMain.on('navigate-from-suggestions', (event, url) => {
     navigate(url);
     if (mainWindow) mainWindow.webContents.send('blur-top-bar');
+});
+
+ipcMain.on('swipe-gesture', (event, data) => {
+    // Forward gesture tracking/UI events to the main window's renderer
+    const webContents = event.sender;
+    const tab = tabs.find(t => t.view && t.view.webContents === webContents);
+    if (!tab) return;
+
+    const win = BrowserWindow.fromId(tab.windowId);
+    if (win) {
+        sendToRenderer('swipe-gesture', data, 'main', win.id);
+    }
+
+    // Handle the actual navigation if complete
+    if (data.action === 'complete') {
+        if (data.direction === 'back' && webContents.canGoBack()) {
+            webContents.goBack();
+        } else if (data.direction === 'forward' && webContents.canGoForward()) {
+            webContents.goForward();
+        }
+    }
 });
 
 function setupKeyboardShortcuts() {
@@ -2441,7 +2998,13 @@ function setupKeyboardShortcuts() {
                 { role: 'cut' },
                 { role: 'copy' },
                 { role: 'paste' },
-                { role: 'selectAll' }
+                { role: 'selectAll' },
+                { type: 'separator' },
+                {
+                    label: 'Find in Page',
+                    accelerator: 'CmdOrCtrl+F',
+                    click: () => sendToRenderer('show-find', null)
+                }
             ]
         },
         {
@@ -2485,9 +3048,21 @@ function setupKeyboardShortcuts() {
                     }
                 },
                 { type: 'separator' },
-                { role: 'resetZoom' },
-                { role: 'zoomIn' },
-                { role: 'zoomOut' },
+                {
+                    label: 'Reset Zoom',
+                    accelerator: 'CmdOrCtrl+0',
+                    click: () => sendToRenderer('set-zoom-level', { factor: 1.0 })
+                },
+                {
+                    label: 'Zoom In',
+                    accelerator: 'CmdOrCtrl+Plus',
+                    click: () => sendToRenderer('set-zoom-level', { direction: 'in' })
+                },
+                {
+                    label: 'Zoom Out',
+                    accelerator: 'CmdOrCtrl+-',
+                    click: () => sendToRenderer('set-zoom-level', { direction: 'out' })
+                },
                 { type: 'separator' },
                 { role: 'togglefullscreen' }
             ]
@@ -2671,7 +3246,11 @@ function updateSidebarBounds(win) {
 
     const bounds = win.getContentBounds();
     const SIDEBAR_WIDTH = 240;
-    const TOP_BAR_HEIGHT = 40;
+    let TOP_BAR_HEIGHT = 48;
+
+    if (win.isFullScreen()) {
+        TOP_BAR_HEIGHT = 0;
+    }
 
     const shouldShow = !isAutoHideEnabled || win._isSidebarHovered;
 
@@ -2688,8 +3267,8 @@ function updateSidebarBounds(win) {
         win._sidebarView.setBounds({
             x: 0,
             y: Math.round(TOP_BAR_HEIGHT),
-            width: Math.round(SIDEBAR_WIDTH),
-            height: Math.round(bounds.height - TOP_BAR_HEIGHT)
+            width: Math.max(1, Math.round(SIDEBAR_WIDTH)),
+            height: Math.max(1, Math.round(bounds.height - TOP_BAR_HEIGHT))
         });
 
         win.setTopBrowserView(win._sidebarView);
@@ -2710,17 +3289,27 @@ function updateAllTabBounds(win) {
     if (!win) return;
     const bounds = win.getContentBounds();
     const SIDEBAR_WIDTH = 240;
-    const TOP_BAR_HEIGHT = 40;
+    const DEFAULT_TOP_BAR_HEIGHT = 48;
+
+    // Dynamic offsets for overlays
+    let topBarOffset = DEFAULT_TOP_BAR_HEIGHT;
+    if (win.isFullScreen()) {
+        topBarOffset = 0; // Hide top bar space in full-screen if desired
+    }
+    if (isFindActive) topBarOffset += 60; // Make room for find box
+
+    let bottomBarOffset = 0;
+    if (isDownloadsActive) bottomBarOffset = 80;
 
     let xOffset = 0;
-    let contentWidth = bounds.width;
+    let contentWidth = Math.max(1, bounds.width);
 
     if (!isAutoHideEnabled) {
         xOffset = SIDEBAR_WIDTH;
-        contentWidth = bounds.width - SIDEBAR_WIDTH;
+        contentWidth = Math.max(1, bounds.width - SIDEBAR_WIDTH);
     }
 
-    const contentHeight = bounds.height - TOP_BAR_HEIGHT;
+    const contentHeight = Math.max(1, bounds.height - topBarOffset - bottomBarOffset);
 
     // Handle Split View layout
     if (win._activeTabId && !isSettingsOpen && !isAIOverlayOpen && !isActionBarOpen) {
@@ -2736,17 +3325,17 @@ function updateAllTabBounds(win) {
 
                 activeTab.view.setBounds({
                     x: Math.round(xOffset),
-                    y: Math.round(TOP_BAR_HEIGHT),
-                    width: leftWidth,
-                    height: Math.round(contentHeight)
+                    y: Math.round(topBarOffset),
+                    width: Math.max(1, Math.round(leftWidth)),
+                    height: Math.max(1, Math.round(contentHeight))
                 });
                 activeTab.view.webContents.executeJavaScript('window.dispatchEvent(new Event("resize"));').catch(() => { });
 
                 splitTab.view.setBounds({
                     x: Math.round(xOffset + leftWidth + GAP_WIDTH),
-                    y: Math.round(TOP_BAR_HEIGHT),
-                    width: rightWidth,
-                    height: Math.round(contentHeight)
+                    y: Math.round(topBarOffset),
+                    width: Math.max(1, Math.round(rightWidth)),
+                    height: Math.max(1, Math.round(contentHeight))
                 });
                 splitTab.view.webContents.executeJavaScript('window.dispatchEvent(new Event("resize"));').catch(() => { });
 
@@ -2772,9 +3361,9 @@ function updateAllTabBounds(win) {
         if (tab.view) {
             tab.view.setBounds({
                 x: Math.round(xOffset),
-                y: Math.round(TOP_BAR_HEIGHT),
-                width: Math.round(contentWidth),
-                height: Math.round(contentHeight)
+                y: Math.round(topBarOffset),
+                width: Math.max(1, Math.round(contentWidth)),
+                height: Math.max(1, Math.round(contentHeight))
             });
         }
     });
@@ -2923,6 +3512,17 @@ if (app) {
         globalShortcut.register('Alt+Shift+K', () => {
             console.log('[Main] Shortcut: Alt+Shift+K (Command Palette)');
             sendToRenderer('toggle-action-bar', { mode: 'palette' }, 'main');
+        });
+
+        // AI Rewrite Shortcut
+        globalShortcut.register('Alt+R', () => {
+            const win = BrowserWindow.getFocusedWindow();
+            if (win) {
+                const activeTab = getActiveTab(win.id);
+                if (activeTab && activeTab.view) {
+                    activeTab.view.webContents.send('extension-action', { action: 'triggerAIRewriteShortcut' });
+                }
+            }
         });
     });
 

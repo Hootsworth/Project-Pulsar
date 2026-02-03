@@ -1368,3 +1368,233 @@
     opacity: 0;
     transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+/* ============================================ */
+/* AI REWRITE UI                                */
+/* ============================================ */
+
+
+/* ============================================ */
+/* AI REWRITE UI (MINIMALIST REDESIGN)          */
+/* ============================================ */
+
+.htt-rewrite-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2147483647;
+    animation: httSimpleFade 0.3s ease-out;
+}
+
+.htt-rewrite-card {
+    width: 90%;
+    max-width: 420px;
+    background: #1c1c1e;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    box-shadow: 0 32px 64px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Muted Loading State */
+.htt-rewrite-card.loading .htt-rewrite-card-content {
+    opacity: 0.5;
+}
+
+.htt-rewrite-card.loading::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 1.5px;
+    background: rgba(255, 255, 255, 0.05);
+    overflow: hidden;
+}
+
+.htt-rewrite-card.loading::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -30%;
+    width: 30%;
+    height: 1.5px;
+    background: rgba(255, 255, 255, 0.6);
+    z-index: 10;
+    animation: httProgress 2s infinite ease-in-out;
+}
+
+@keyframes httProgress {
+    0% {
+        left: -30%;
+    }
+
+    100% {
+        left: 100%;
+    }
+}
+
+.htt-rewrite-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px;
+}
+
+.htt-rewrite-title {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.6);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    letter-spacing: -0.01em;
+}
+
+.htt-close-muted {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.3);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.htt-close-muted:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.htt-rewrite-body {
+    padding: 0 18px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.htt-rewrite-label {
+    font-size: 0.6rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(255, 255, 255, 0.25);
+}
+
+.htt-rewrite-preview {
+    background: rgba(255, 255, 255, 0.015);
+    border-radius: 6px;
+    padding: 8px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.htt-rewrite-text {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.4);
+    line-height: 1.4;
+}
+
+.htt-rewrite-result {
+    min-height: 80px;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 8px;
+    padding: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    display: flex;
+    align-items: flex-start;
+}
+
+.htt-rewrite-new-text {
+    width: 100%;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.9);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.htt-rewrite-new-text.visible {
+    opacity: 1;
+}
+
+.htt-rewrite-footer {
+    padding: 12px 18px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.01);
+    border-top: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.htt-rewrite-btn {
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.htt-rewrite-btn:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.htt-rewrite-btn.primary {
+    background: rgba(255, 255, 255, 0.9);
+    border: none;
+    color: #000;
+}
+
+.htt-rewrite-btn.primary:hover {
+    background: #fff;
+    transform: translateY(-1px);
+}
+
+/* Animations */
+@keyframes httSimpleFade {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Injection Swoosh (Muted) */
+.htt-swoosh-inject {
+    animation: httSwooshMuted 0.5s ease;
+}
+
+@keyframes httSwooshMuted {
+    0% {
+        background-color: rgba(255, 255, 255, 0.15);
+    }
+
+    100% {
+        background-color: rgba(255, 255, 255, 0);
+    }
+}

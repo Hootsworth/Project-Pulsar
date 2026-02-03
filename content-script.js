@@ -60,6 +60,31 @@
         if (request.action === 'showNotification') {
             showNotification(request.text || request.message);
         }
+
+        if (request.action === 'showAIRewritePopup') {
+            showAIRewritePopup(request);
+        }
+
+        if (request.action === 'triggerAIRewriteShortcut') {
+            const selection = window.getSelection().toString().trim();
+            if (selection) {
+                chrome.runtime.sendMessage({
+                    action: 'askAI',
+                    prompt: `Rewrite this: "${selection}"`,
+                    context: "Direct rewrite requested via shortcut."
+                }, (res) => {
+                    if (res && res.answer) {
+                        showAIRewritePopup({
+                            selectedText: selection,
+                            result: res.answer,
+                            mode: 'shorter'
+                        });
+                    }
+                });
+            } else {
+                showNotification('Select some text to rewrite!');
+            }
+        }
     });
 
     function toggleGlobalDarkMode(enabled) {
@@ -1370,6 +1395,149 @@
         }
 
         document.body.appendChild(widget);
+    }
+
+    // ============================================
+    // AI REWRITE UI
+    // ============================================
+
+    function showAIRewritePopup(data) {
+        let existing = document.getElementById('htt-rewrite-overlay');
+        if (existing) {
+            updateAIRewritePopup(existing, data);
+            return;
+        }
+
+        const overlay = document.createElement('div');
+        overlay.id = 'htt-rewrite-overlay';
+        overlay.className = 'htt-rewrite-overlay';
+        overlay.innerHTML = `
+            <div class="htt-rewrite-card ${data.loading ? 'loading' : ''}">
+                <div class="htt-rewrite-card-content">
+                    <div class="htt-rewrite-header">
+                        <div class="htt-rewrite-title">
+                            <span>✨</span>
+                            AI Rewrite
+                        </div>
+                        <button class="htt-close-muted" id="httRewriteClose">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                        </button>
+                    </div>
+                    <div class="htt-rewrite-body">
+                        <div class="htt-rewrite-preview">
+                            <span class="htt-rewrite-label">Original</span>
+                            <div class="htt-rewrite-text">"${escapeHtml(data.selectedText)}"</div>
+                        </div>
+                        <div class="htt-rewrite-label">AI Suggestion</div>
+                        <div class="htt-rewrite-result ${data.loading ? 'loading' : ''}">
+                            <div class="htt-rewrite-new-text ${data.result ? 'visible' : ''}">
+                                ${data.result ? escapeHtml(data.result) : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="htt-rewrite-footer">
+                        <button class="htt-rewrite-btn" id="httRewriteCancel">Cancel</button>
+                        ${data.result ? '<button class="htt-rewrite-btn primary" id="httRewriteInject">Replace</button>' : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        overlay.querySelector('#httRewriteClose').onclick = () => overlay.remove();
+        overlay.querySelector('#httRewriteCancel').onclick = () => overlay.remove();
+
+        if (data.result) {
+            overlay.querySelector('#httRewriteInject').onclick = () => {
+                injectRewrittenText(data.result);
+                overlay.remove();
+            };
+        }
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) overlay.remove();
+        });
+    }
+
+    function updateAIRewritePopup(overlay, data) {
+        const card = overlay.querySelector('.htt-rewrite-card');
+        const resultContainer = overlay.querySelector('.htt-rewrite-result');
+        const textContainer = overlay.querySelector('.htt-rewrite-new-text');
+        const footer = overlay.querySelector('.htt-rewrite-footer');
+
+        if (data.loading) {
+            card.classList.add('loading');
+            resultContainer.classList.add('loading');
+            textContainer.classList.remove('visible');
+            textContainer.innerText = '';
+            footer.innerHTML = '<button class="htt-rewrite-btn" id="httRewriteCancel">Cancel</button>';
+        } else if (data.result || data.error) {
+            card.classList.remove('loading');
+            resultContainer.classList.remove('loading');
+            textContainer.innerText = data.error ? `Error: ${data.error}` : data.result;
+            textContainer.classList.add('visible');
+
+            footer.innerHTML = `
+                <button class="htt-rewrite-btn" id="httRewriteCancel">Cancel</button>
+                ${data.result ? '<button class="htt-rewrite-btn primary" id="httRewriteInject">Replace</button>' : ''}
+            `;
+
+            if (data.result) {
+                footer.querySelector('#httRewriteInject').onclick = () => {
+                    injectRewrittenText(data.result);
+                    overlay.remove();
+                };
+            }
+        }
+
+        footer.querySelector('#httRewriteCancel').onclick = () => overlay.remove();
+    }
+
+    function injectRewrittenText(newText) {
+        const selection = window.getSelection();
+        if (!selection.rangeCount) return;
+
+        const range = selection.getRangeAt(0);
+        const activeEl = document.activeElement;
+
+        // Check if we are in a text input or textarea
+        if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+            const start = activeEl.selectionStart;
+            const end = activeEl.selectionEnd;
+            const text = activeEl.value;
+            const before = text.substring(0, start);
+            const after = text.substring(end);
+
+            activeEl.value = before + newText + after;
+
+            // Dispatch events so the site knows the value changed
+            activeEl.dispatchEvent(new Event('input', { bubbles: true }));
+            activeEl.dispatchEvent(new Event('change', { bubbles: true }));
+
+            // Highlight the new text with the swoosh effect
+            activeEl.classList.add('htt-swoosh-inject');
+            setTimeout(() => activeEl.classList.remove('htt-swoosh-inject'), 600);
+
+            return;
+        }
+
+        // Handle contenteditable or regular page text
+        range.deleteContents();
+
+        const span = document.createElement('span');
+        span.className = 'htt-swoosh-inject';
+        span.textContent = newText;
+
+        range.insertNode(span);
+
+        // Remove the span after animation but keep text
+        setTimeout(() => {
+            const textNode = document.createTextNode(newText);
+            span.parentNode.replaceChild(textNode, span);
+        }, 500);
+
+        selection.removeAllRanges();
     }
 
 })();

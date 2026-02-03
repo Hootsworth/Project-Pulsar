@@ -25,7 +25,8 @@ async function loadSettings() {
                 'showTimeWatermark', 'newTabResults', 'aiProvider',
                 'openaiKey', 'geminiKey', 'grokKey', 'llamaKey',
                 'wallpaper', 'forceDarkMode', 'privacyDisclosureEnabled',
-                'incognitoSearchEngine'
+                'incognitoSearchEngine', 'ratatouilleMode',
+                'aiTranslationEnabled', 'smartGroupingEnabled'
             ]);
 
             if (settings.themeAccent && ACCENTS[settings.themeAccent]) {
@@ -57,10 +58,15 @@ async function loadSettings() {
             }
 
             // Restore Toggles
-            ['showQuickLinks', 'showTimeWatermark', 'newTabResults', 'forceDarkMode', 'privacyDisclosureEnabled'].forEach(id => {
+            ['showQuickLinks', 'showTimeWatermark', 'newTabResults', 'forceDarkMode', 'privacyDisclosureEnabled', 'ratatouilleMode', 'aiTranslationEnabled', 'smartGroupingEnabled'].forEach(id => {
                 const el = $(id);
                 if (el && settings[id] !== undefined) el.checked = settings[id];
             });
+
+            if (settings.ratatouilleMode) {
+                document.body.classList.add('ratatouille-enabled');
+                $('btn-kitchen-top')?.classList.remove('hidden');
+            }
 
             // Restore Wallpaper
             if (settings.wallpaper) {
@@ -121,12 +127,33 @@ safeAddListener('btn-max', 'click', () => window.browser?.maximize());
 safeAddListener('btn-close', 'click', () => window.browser?.close());
 
 // ============================================
+// UI HELPERS
+// ============================================
+
+function showToast(message, icon = '✨') {
+    const container = $('toast-container');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.innerHTML = `<span class="toast-icon">${icon}</span> <span class="toast-text">${message}</span>`;
+
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        toast.classList.add('fade-out');
+        setTimeout(() => toast.remove(), 300);
+    }, 2000);
+}
+
+// ============================================
 // NAVIGATION (Top Bar)
 // ============================================
 
 safeAddListener('btn-back-top', 'click', () => window.browser?.goBack());
 safeAddListener('btn-forward-top', 'click', () => window.browser?.goForward());
 safeAddListener('btn-reload-top', 'click', () => window.browser?.reload());
+
 function toggleModal(id, show) {
     const modal = $(id);
     if (!modal) return;
@@ -140,6 +167,117 @@ function toggleModal(id, show) {
     }
 }
 
+// ============================================
+// GESTURE CONTROLS
+// ============================================
+
+let gestureStartX = 0;
+let gestureStartY = 0;
+let isGestureActive = false;
+const GESTURE_THRESHOLD = 50;
+
+function initGestures() {
+    window.addEventListener('mousedown', (e) => {
+        if (e.button === 2) { // Right click
+            gestureStartX = e.clientX;
+            gestureStartY = e.clientY;
+            isGestureActive = true;
+        }
+    });
+
+    window.addEventListener('mouseup', (e) => {
+        if (e.button === 2 && isGestureActive) {
+            const dx = e.clientX - gestureStartX;
+            const dy = e.clientY - gestureStartY;
+            isGestureActive = false;
+
+            if (Math.abs(dx) > GESTURE_THRESHOLD || Math.abs(dy) > GESTURE_THRESHOLD) {
+                // If it was a significant movement, prevent context menu
+                if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+                    // We'll prevent contextmenu event separately
+                }
+
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    if (dx > GESTURE_THRESHOLD) {
+                        window.browser?.goForward();
+                        showToast('Forward', '➡️');
+                    } else if (dx < -GESTURE_THRESHOLD) {
+                        window.browser?.goBack();
+                        showToast('Back', '⬅️');
+                    }
+                } else {
+                    if (dy > GESTURE_THRESHOLD) {
+                        window.browser?.createTab();
+                        showToast('New Tab', '➕');
+                    } else if (dy < -GESTURE_THRESHOLD) {
+                        window.browser?.reload();
+                        showToast('Refresh', '🔄');
+                    }
+                }
+            }
+        }
+    });
+
+    // Prevent context menu if a gesture was performed
+    window.addEventListener('contextmenu', (e) => {
+        const dx = e.clientX - gestureStartX;
+        const dy = e.clientY - gestureStartY;
+        if (Math.abs(dx) > 20 || Math.abs(dy) > 20) {
+            e.preventDefault();
+        }
+    });
+}
+initGestures();
+
+// Swipe Gesture UI Handling
+if (window.browser?.onSwipeGesture) {
+    window.browser.onSwipeGesture((data) => {
+        const indicatorLeft = $('nav-indicator-left');
+        const indicatorRight = $('nav-indicator-right');
+        if (!indicatorLeft || !indicatorRight) return;
+
+        if (data.action === 'start' || data.action === 'update') {
+            const indicator = data.direction === 'back' ? indicatorLeft : indicatorRight;
+            const other = data.direction === 'back' ? indicatorRight : indicatorLeft;
+
+            other.classList.remove('visible', 'snappy-trigger');
+            indicator.classList.add('visible');
+
+            const progress = data.progress || 0;
+            const directionMultiplier = data.direction === 'back' ? 1 : -1;
+            // Snappy movement: move from edge towards center as progress increases
+            const moveOffset = directionMultiplier * (progress * 0.4);
+            indicator.style.transform = `translateX(${moveOffset}px) scale(${0.7 + (progress * 0.003)})`;
+            indicator.style.opacity = Math.min(1, progress * 0.03);
+
+            if (progress >= 100) {
+                indicator.style.background = 'var(--accent-primary)';
+                indicator.style.color = 'white';
+            } else {
+                indicator.style.background = '';
+                indicator.style.color = '';
+            }
+        } else if (data.action === 'complete') {
+            const indicator = data.direction === 'back' ? indicatorLeft : indicatorRight;
+            indicator.classList.add('snappy-trigger');
+            setTimeout(() => {
+                indicator.classList.remove('visible', 'snappy-trigger');
+                indicator.style.transform = '';
+                indicator.style.opacity = '';
+                indicator.style.background = '';
+                indicator.style.color = '';
+            }, 600);
+        } else if (data.action === 'cancel') {
+            indicatorLeft.classList.remove('visible');
+            indicatorRight.classList.remove('visible');
+            indicatorLeft.style.transform = '';
+            indicatorRight.style.transform = '';
+            indicatorLeft.style.opacity = '';
+            indicatorRight.style.opacity = '';
+        }
+    });
+}
+
 safeAddListener('btn-settings-top', 'click', () => toggleModal('settings-overlay', true));
 safeAddListener('settings-close', 'click', () => toggleModal('settings-overlay', false));
 
@@ -150,8 +288,14 @@ safeAddListener('btn-split-top', 'click', () => {
 safeAddListener('btn-action-bar-top', 'click', () => {
     console.log('[Renderer] Navbar button clicked');
     const overlay = $('action-bar-overlay');
-    const isActive = overlay ? overlay.classList.contains('active') : false;
-    toggleActionBar(!isActive);
+    const isActive = overlay ? overlay.classList.contains('active') && !overlay.classList.contains('kitchen-mode') : false;
+    toggleActionBar(!isActive, 'ai');
+});
+
+safeAddListener('btn-kitchen-top', 'click', () => {
+    const overlay = $('action-bar-overlay');
+    const isActive = overlay ? overlay.classList.contains('active') && overlay.classList.contains('kitchen-mode') : false;
+    toggleActionBar(!isActive, 'kitchen');
 });
 
 // ============================================
@@ -211,6 +355,13 @@ safeAddListener('btn-close-archive', 'click', () => {
 safeAddListener('go-search-close', 'click', () => toggleModal('go-search-overlay', false));
 safeAddListener('close-lyrics', 'click', () => toggleModal('lyrics-overlay', false));
 safeAddListener('split-picker-close', 'click', () => toggleModal('split-picker-overlay', false));
+
+// Setup main settings listeners
+['showQuickLinks', 'showTimeWatermark', 'newTabResults', 'forceDarkMode', 'privacyDisclosureEnabled', 'ratatouilleMode', 'aiTranslationEnabled', 'smartGroupingEnabled'].forEach(id => {
+    safeAddListener(id, 'change', (e) => {
+        window.browser?.storageSet({ [id]: e.target.checked });
+    });
+});
 
 safeAddListener('incognitoSearchSelect', 'change', (e) => {
     window.browser?.storageSet({ incognitoSearchEngine: e.target.value });
@@ -623,6 +774,50 @@ function renderPinnedTabs() {
         };
 
         pinnedTabsList.appendChild(pinEl);
+        setupTabPreview(pinEl, tab);
+    });
+}
+
+// ============================================
+// TAB PREVIEW HELPERS
+// ============================================
+
+const previewCard = $('tab-preview-card');
+const previewImg = $('tab-preview-img');
+const previewFav = $('tab-preview-favicon');
+const previewTitle = $('tab-preview-title');
+let previewTimeout = null;
+
+function setupTabPreview(el, tab) {
+    if (!previewCard) return;
+
+    el.addEventListener('mouseenter', () => {
+        if (previewTimeout) clearTimeout(previewTimeout);
+
+        previewTimeout = setTimeout(async () => {
+            try {
+                const thumbnail = await window.browser?.invoke('get-tab-thumbnail', tab.id);
+                if (thumbnail) {
+                    previewImg.src = thumbnail;
+                    let hostname = 'google.com';
+                    try { hostname = new URL(tab.url).hostname; } catch (e) { }
+                    previewFav.src = tab.favicon || `https://www.google.com/s2/favicons?sz=32&domain=${hostname}`;
+                    previewTitle.textContent = tab.title || 'New Tab';
+
+                    const rect = el.getBoundingClientRect();
+                    const y = Math.min(window.innerHeight - 180, Math.max(10, rect.top - 60));
+                    previewCard.style.top = `${y}px`;
+                    previewCard.classList.add('visible');
+                }
+            } catch (err) {
+                console.error('Failed to get thumbnail:', err);
+            }
+        }, 350);
+    });
+
+    el.addEventListener('mouseleave', () => {
+        if (previewTimeout) clearTimeout(previewTimeout);
+        previewCard.classList.remove('visible');
     });
 }
 
@@ -813,6 +1008,7 @@ function createTabElement(tab) {
         tabEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
+    setupTabPreview(tabEl, tab);
     return tabEl;
 }
 
@@ -1262,11 +1458,17 @@ if (window.browser?.onStorageChanged) {
 // SETTINGS PERSISTENCE LISTENERS
 // ============================================
 
-['showQuickLinks', 'showTimeWatermark', 'newTabResults'].forEach(id => {
+['showQuickLinks', 'showTimeWatermark', 'newTabResults', 'ratatouilleMode'].forEach(id => {
     const el = $(id);
     if (el) {
         el.onchange = () => {
             window.browser?.storageSet({ [id]: el.checked });
+            if (id === 'ratatouilleMode') {
+                document.body.classList.toggle('ratatouille-enabled', el.checked);
+                $('btn-kitchen-top')?.classList.toggle('hidden', !el.checked);
+                // Refresh action bar results to show/hide experimental commands
+                updateActionBarResults($('action-bar-input')?.value || '', $('action-bar-overlay')?.classList.contains('palette-mode') ? 'palette' : 'ai');
+            }
         };
     }
 });
@@ -1320,17 +1522,20 @@ function toggleActionBar(show, mode = 'ai') {
 
     if (show) {
         overlay.classList.add('active');
-        if (mode === 'palette') {
+        if (mode === 'palette' || mode === 'kitchen') {
             overlay.classList.add('palette-mode');
+            if (mode === 'kitchen') overlay.classList.add('kitchen-mode');
+            else overlay.classList.remove('kitchen-mode');
         } else {
             overlay.classList.remove('palette-mode');
+            overlay.classList.remove('kitchen-mode');
         }
 
         window.browser?.setActionBarVisibility(true);
         input?.focus();
         if (input) {
             input.value = '';
-            input.placeholder = mode === 'palette' ? 'Type a command...' : 'Search or ask AI';
+            input.placeholder = mode === 'palette' ? 'Type a command...' : (mode === 'kitchen' ? 'Search kitchen tools...' : 'Search or ask AI');
             input.style.color = '';
             input.style.caretColor = '';
             input.readOnly = false;
@@ -1362,6 +1567,27 @@ const COMMANDS = [
     { title: 'Check for Updates', desc: 'See if Pulsar is ready', icon: 'download', action: () => { toggleModal('settings-overlay', true); initSettingsTabs('updates'); } }
 ];
 
+const RATATOUILLE_COMMANDS = [
+    {
+        title: 'Kitchen: Refresh Styles', desc: 'Force reload CSS without refreshing', icon: 'refresh', action: () => {
+            document.querySelectorAll('link[rel="stylesheet"]').forEach(l => {
+                if (l.href.includes('styles.css') || l.href.includes('content-styles.css')) {
+                    l.href = l.href.split('?')[0] + '?r=' + Math.random();
+                }
+            });
+        }
+    },
+    { title: 'Kitchen: Inspector', desc: 'Inspect current page elements', icon: 'terminal', action: () => window.browser?.invoke('open-devtools') },
+    { title: 'Kitchen: Clear System Cache', desc: 'Empty browser cache', icon: 'trash', action: () => window.browser?.invoke('clear-cache') },
+    {
+        title: 'Kitchen: Performance Monitor', desc: 'Log system usage to console', icon: 'zap', action: async () => {
+            const stats = await window.browser?.invoke('get-performance');
+            console.log('[Ratatouille] Performance Stats:', stats);
+            alert(`Memory Stats:\nHeap Used: ${stats.heapUsed}\nHeap Total: ${stats.heapTotal}\nRSS: ${stats.rss}`);
+        }
+    }
+];
+
 const ICONS = {
     plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>',
     split: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="12" y1="3" x2="12" y2="21"></line></svg>',
@@ -1371,7 +1597,10 @@ const ICONS = {
     download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>',
     history: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"></path><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>',
     ai: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>',
-    globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>'
+    globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>',
+    refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>',
+    terminal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>',
+    zap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>'
 };
 
 let selectedMentionIndex = -1;
@@ -1489,10 +1718,26 @@ async function updateActionBarResults(query, mode = 'ai') {
     } catch (e) { }
 
     let sections = [];
+    const isRatatouille = document.body.classList.contains('ratatouille-enabled');
+    const isKitchenMode = mode === 'kitchen';
 
-    if (!q) {
+    if (isKitchenMode) {
+        let kitchenItems = RATATOUILLE_COMMANDS;
+        if (q) {
+            kitchenItems = RATATOUILLE_COMMANDS.filter(c => c.title.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q));
+        }
+        sections.push({ label: 'Experimental Kitchen', items: kitchenItems });
+    } else if (!q) {
         // Default View: Commands + Recent Tabs
-        sections.push({ label: 'Quick Actions', items: COMMANDS.slice(0, 4) });
+        let quickActions = COMMANDS.slice(0, 4);
+        if (isRatatouille) {
+            quickActions = [...quickActions, ...RATATOUILLE_COMMANDS.slice(0, 2)];
+        }
+        sections.push({ label: 'Quick Actions', items: quickActions });
+
+        if (isRatatouille) {
+            sections.push({ label: 'Experimental Kitchen', items: RATATOUILLE_COMMANDS });
+        }
         if (history.length > 0) {
             sections.push({
                 label: 'Recently Visited',
@@ -1508,7 +1753,12 @@ async function updateActionBarResults(query, mode = 'ai') {
         if (ghost) ghost.textContent = '';
     } else {
         // Filtered View
-        const filteredCommands = COMMANDS.filter(c => c.title.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q));
+        let availableCommands = COMMANDS;
+        if (isRatatouille) {
+            availableCommands = [...COMMANDS, ...RATATOUILLE_COMMANDS];
+        }
+
+        const filteredCommands = availableCommands.filter(c => c.title.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q));
         if (filteredCommands.length > 0) {
             sections.push({ label: 'Commands', items: filteredCommands });
         }
@@ -1557,15 +1807,32 @@ async function updateActionBarResults(query, mode = 'ai') {
                             history = stats.footsteps || [];
                         } catch (e) { }
 
-                        const lastTabs = history.slice(0, 15).map(t => `${t.title} (${t.url})`).join('\n');
-                        const contextPrompt = `You are the Pulsar Browser Assistant. Use the following browsing history as context to answer.
-Context (Last 15 visited pages):
-${lastTabs}
+                        // Conservative History: Only include if relevant
+                        const historyKeywords = ['history', 'visit', 'site', 'website', 'page', 'last', 'previous', 'open', 'tab', 'before'];
+                        const needsHistory = historyKeywords.some(kw => userQuery.toLowerCase().includes(kw));
 
-If the user is asking specifically about a page in their history (e.g. "what was the last wikipedia page?"), find it and if clear, respond ONLY with: GOTO: [URL].
-Otherwise, answer concisely.
+                        let contextPrompt = `You are the Pulsar Browser Assistant. Answer concisely.`;
+
+                        if (needsHistory) {
+                            const historyList = history.slice(0, 35).map((h, i) => `${i + 1}. ${h.title} (${h.url})`).join('\n');
+                            contextPrompt = `You are the Pulsar Browser Engine. You have DIRECT CONTROL over the user's browser tabs and navigation. 
+DO NOT tell the user you cannot open links. You MUST use the commands below to perform actions.
+
+History (Most recent first - #1 is latest):
+${historyList}
+
+AVAILABLE COMMANDS:
+1. GOTO: [URL] - Use this for "open [page]", "go to [page]", "navigate to [page]".
+2. OPEN_TABS: [URL1, URL2, ...] - Use this for "open the last 3 sites", "open wikipedia and google", etc.
+3. Concise Answer - If the user is just asking a question (e.g. "what was the 5th site?"), just answer it.
+
+STRICT RULE: If navigating or opening tabs, respond ONLY with the command. No conversational filler.
 
 User Question: ${userQuery}`;
+                        } else {
+                            contextPrompt = `You are the Pulsar Browser Assistant. 
+User Question: ${userQuery}`;
+                        }
 
                         // Call AI Search
                         const response = await window.browser?.aiSearch(contextPrompt, settings);
@@ -1578,19 +1845,41 @@ User Question: ${userQuery}`;
                             return;
                         }
 
-                        // Check for GOTO
-                        if (response.summary && response.summary.startsWith('GOTO:')) {
-                            const url = response.summary.replace('GOTO:', '').trim();
-                            window.browser?.navigate(url);
-                            toggleActionBar(false);
-                            return;
+                        // COMMAND HANDLERS
+                        const content = response.summary || '';
+
+                        // 1. Single Navigation (GOTO)
+                        if (content.includes('GOTO:')) {
+                            try {
+                                const match = content.match(/GOTO:\s*([^\s\n]+)/);
+                                if (match) {
+                                    window.browser?.navigate(match[1].trim());
+                                    toggleActionBar(false);
+                                    return;
+                                }
+                            } catch (e) { console.error('Failed to parse GOTO', e); }
                         }
 
-                        // Expand bar and show result
+                        // 2. Multi-Tab Opening (OPEN_TABS)
+                        if (content.includes('OPEN_TABS:')) {
+                            try {
+                                const match = content.match(/OPEN_TABS:\s*\[?([^\]\n]+)\]?/);
+                                if (match) {
+                                    const cleanUrls = match[1];
+                                    const urls = cleanUrls.split(',').map(u => u.trim()).filter(u => `${u}`.length > 5);
+
+                                    urls.forEach(url => window.browser?.createTab(url));
+                                    toggleActionBar(false);
+                                    return;
+                                }
+                            } catch (e) { console.error('Failed to parse OPEN_TABS', e); }
+                        }
+
+                        // 3. Regular AI Answer
                         if (aiResult) {
                             const bar = $('action-bar-main');
                             if (bar) bar.classList.add('expanded');
-                            aiResult.innerHTML = `<div class="ai-answer-content">${response.summary}</div>`;
+                            aiResult.innerHTML = `<div class="ai-answer-content">${content}</div>`;
                             aiResult.classList.remove('hidden');
                         }
                     } catch (err) {
@@ -2157,3 +2446,178 @@ function initPulsarMenu() {
     };
 }
 
+// ============================================
+// CORE BROWSER FEATURES (FIND, ZOOM, DOWNLOADS)
+// ============================================
+
+// 1. Zoom Management
+let currentZoomFactor = 1.0;
+const ZOOM_STEP = 0.1;
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 3.0;
+
+function updateZoomBadge() {
+    const badge = $('zoom-badge');
+    if (!badge) return;
+
+    if (currentZoomFactor === 1.0) {
+        badge.classList.add('hidden');
+    } else {
+        badge.classList.remove('hidden');
+        badge.innerText = `${Math.round(currentZoomFactor * 100)}%`;
+    }
+}
+
+window.browser?.onSetZoomLevel((data) => {
+    if (data.factor !== undefined) {
+        currentZoomFactor = data.factor;
+    } else if (data.direction === 'in') {
+        currentZoomFactor = Math.min(MAX_ZOOM, currentZoomFactor + ZOOM_STEP);
+    } else if (data.direction === 'out') {
+        currentZoomFactor = Math.max(MIN_ZOOM, currentZoomFactor - ZOOM_STEP);
+    }
+
+    window.browser?.setZoom(currentZoomFactor);
+    updateZoomBadge();
+});
+
+// 2. Find in Page
+const findBox = $('find-box');
+const findInput = $('find-input');
+const findResults = $('find-results');
+
+function showFindBox() {
+    if (!findBox) return;
+    findBox.classList.remove('hidden');
+    window.browser?.setFindActive(true);
+    findInput?.focus();
+    if (findInput?.value) {
+        window.browser?.findInPage(findInput.value, { forward: true, findNext: false });
+    }
+}
+
+function hideFindBox() {
+    if (!findBox) return;
+    findBox.classList.add('hidden');
+    window.browser?.setFindActive(false);
+    window.browser?.stopFind('clearSelection');
+}
+
+window.browser?.onShowFind(() => {
+    showFindBox();
+});
+
+safeAddListener('find-input', 'input', (e) => {
+    const text = e.target.value;
+    if (text) {
+        window.browser?.findInPage(text, { forward: true, findNext: false });
+    } else {
+        window.browser?.stopFind('clearSelection');
+        if (findResults) findResults.innerText = '0 / 0';
+    }
+});
+
+safeAddListener('find-input', 'keydown', (e) => {
+    if (e.key === 'Enter') {
+        window.browser?.findInPage(findInput.value, { forward: !e.shiftKey, findNext: true });
+    } else if (e.key === 'Escape') {
+        hideFindBox();
+    }
+});
+
+safeAddListener('find-next', 'click', () => {
+    window.browser?.findInPage(findInput.value, { forward: true, findNext: true });
+});
+
+safeAddListener('find-prev', 'click', () => {
+    window.browser?.findInPage(findInput.value, { forward: false, findNext: true });
+});
+
+safeAddListener('find-close', 'click', hideFindBox);
+
+window.browser?.onFindMatchResults((result) => {
+    if (findResults && result.matches !== undefined) {
+        findResults.innerText = `${result.activeMatchOrdinal} / ${result.matches}`;
+    }
+});
+
+// 3. Download Manager
+const downloadsCenter = $('downloads-center');
+const activeDownloads = new Map();
+
+window.browser?.onDownloadStarted((data) => {
+    if (!downloadsCenter) return;
+
+    // Set active state in main process to adjust layout
+    window.browser?.setDownloadsActive(true);
+
+    const chip = document.createElement('div');
+    chip.className = 'download-chip';
+    chip.id = `download-${data.id}`;
+    chip.innerHTML = `
+        <div class="download-progress-ring">
+            <svg width="32" height="32" viewBox="0 0 32 32">
+                <circle class="download-ring-bg" cx="16" cy="16" r="14"></circle>
+                <circle class="download-ring-fill" cx="16" cy="16" r="14"></circle>
+            </svg>
+        </div>
+        <div class="download-info">
+            <div class="download-filename">${data.filename}</div>
+            <div class="download-status">Starting...</div>
+        </div>
+    `;
+
+    downloadsCenter.appendChild(chip);
+    activeDownloads.set(data.id, chip);
+});
+
+window.browser?.onDownloadUpdated((data) => {
+    const chip = activeDownloads.get(data.id);
+    if (!chip) return;
+
+    const statusEl = chip.querySelector('.download-status');
+    const ringFill = chip.querySelector('.download-ring-fill');
+
+    if (data.status === 'progressing') {
+        const percent = Math.round((data.receivedBytes / data.totalBytes) * 100) || 0;
+        statusEl.innerText = `${percent}% complete`;
+
+        // Update SVG ring (circumference is ~88)
+        const offset = 88 - (88 * (percent / 100));
+        ringFill.style.strokeDashoffset = offset;
+    } else {
+        statusEl.innerText = data.status.charAt(0).toUpperCase() + data.status.slice(1);
+    }
+});
+
+window.browser?.onDownloadDone((data) => {
+    const chip = activeDownloads.get(data.id);
+    if (!chip) return;
+
+    const statusEl = chip.querySelector('.download-status');
+    const ringFill = chip.querySelector('.download-ring-fill');
+
+    if (data.status === 'completed') {
+        statusEl.innerText = 'Completed';
+        statusEl.style.color = 'var(--accent-primary)';
+        ringFill.style.strokeDashoffset = 0;
+    } else {
+        statusEl.innerText = data.error || 'Failed';
+        statusEl.style.color = '#ff4444';
+    }
+
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        chip.style.opacity = '0';
+        chip.style.transform = 'translateX(20px)';
+        setTimeout(() => {
+            chip.remove();
+            activeDownloads.delete(data.id);
+
+            // If no more downloads, reset layout
+            if (activeDownloads.size === 0) {
+                window.browser?.setDownloadsActive(false);
+            }
+        }, 300);
+    }, 5000);
+});

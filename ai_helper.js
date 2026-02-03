@@ -175,4 +175,29 @@ async function callGrokAI(prompt, apiKey, systemPrompt) {
     });
 }
 
-module.exports = { handleAISearch, GENERIC_SYSTEM_PROMPT };
+const REWRITE_SYSTEM_PROMPTS = {
+    shorter: "Rewrite the following text to be much shorter and more concise. Remove any fluff but keep the core meaning.",
+    professional: "Rewrite the following text to be professional, formal, and business-ready. Use sophisticated vocabulary and a polite tone.",
+    simplify: "Rewrite the following text to be extremely simple and easy to understand. Use basic English, as if explaining to a 10-year-old.",
+    lengthen: "Rewrite the following text to be more detailed and descriptive. Expand on the ideas while maintaining the original intent.",
+    creative: "Rewrite the following text to be creative, engaging, and full of personality. Use evocative language and a spirited tone."
+};
+
+const SUMMARIZE_SYSTEM_PROMPT = `You are a professional summarization engine. 
+Provide a concise, high-density summary of the provided text. 
+Use bullet points for key takeaways. 
+Focus on actionable information and main themes. 
+Do not include introductory or concluding fluff.`;
+
+const EXPLAIN_SYSTEM_PROMPT = `You are a world-class explainer. 
+Your goal is to take complex information and break it down into easy-to-understand concepts. 
+Use analogies, simple language, and logical flow. 
+Ensure the explanation is deep enough to be useful but simple enough to be clear.`;
+
+module.exports = {
+    handleAISearch,
+    GENERIC_SYSTEM_PROMPT,
+    REWRITE_SYSTEM_PROMPTS,
+    SUMMARIZE_SYSTEM_PROMPT,
+    EXPLAIN_SYSTEM_PROMPT
+};
